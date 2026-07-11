@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, format, addMonths, subMonths, isToday } from 'date-fns';
 import { useSessions } from './useSessions';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -13,6 +14,7 @@ export default function CalendarPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const allSessions = useMemo(() => Array.from(byDate.values()), [byDate]);
+  const hasAnySessions = allSessions.length > 0;
 
   const stats = useMemo(() => {
     const generated = allSessions.filter((s) => s.status === 'generated').length;
@@ -36,23 +38,39 @@ export default function CalendarPage() {
     <div className="min-h-screen bg-[#0D1B2A] px-4 py-8 sm:px-8">
       <h1 className="mb-6 text-2xl font-bold text-white">Session Calendar</h1>
 
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Sessions Generated" value={stats.generated} />
-        <StatCard label="Sessions Held" value={stats.held} />
-        <StatCard label="Hold Rate" value={`${stats.holdRate.toFixed(0)}%`} />
-        <StatCard label="Avg Sessions / Week" value={stats.avgPerWeek.toFixed(1)} />
-      </div>
+      {hasAnySessions && (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard label="Sessions Generated" value={stats.generated} />
+          <StatCard label="Sessions Held" value={stats.held} />
+          <StatCard label="Hold Rate" value={`${stats.holdRate.toFixed(0)}%`} />
+          <StatCard label="Avg Sessions / Week" value={stats.avgPerWeek.toFixed(1)} />
+        </div>
+      )}
 
       {isLoading ? (
-        <div className="h-96 animate-pulse rounded-lg bg-[#0F2236]" />
+        <div className="h-96 animate-pulse rounded-2xl bg-[#0F2236]" />
+      ) : !hasAnySessions ? (
+        <EmptyState icon="⬡" title="No sessions yet">
+          Once EDGE runs its first analysis, every day — generated or held — will show up on this calendar.
+        </EmptyState>
       ) : (
-        <div className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] p-4">
+        <div className="rounded-2xl border border-[#1A3C5E] bg-[#0F2236] p-4">
           <div className="mb-4 flex items-center justify-between">
-            <button type="button" onClick={() => setMonth((m) => subMonths(m, 1))} className="rounded px-2 py-1 text-gray-400 hover:text-white">
+            <button
+              type="button"
+              onClick={() => setMonth((m) => subMonths(m, 1))}
+              className="rounded px-2 py-1 text-gray-400 transition-colors hover:text-white"
+              aria-label="Previous month"
+            >
               ‹ Prev
             </button>
             <span className="font-semibold text-white">{format(month, 'MMMM yyyy')}</span>
-            <button type="button" onClick={() => setMonth((m) => addMonths(m, 1))} className="rounded px-2 py-1 text-gray-400 hover:text-white">
+            <button
+              type="button"
+              onClick={() => setMonth((m) => addMonths(m, 1))}
+              className="rounded px-2 py-1 text-gray-400 transition-colors hover:text-white"
+              aria-label="Next month"
+            >
               Next ›
             </button>
           </div>
@@ -82,7 +100,7 @@ export default function CalendarPage() {
                   disabled={!session}
                   onClick={() => setSelectedDate((d) => (d === dateStr ? null : dateStr))}
                   className={clsx(
-                    'aspect-square rounded text-sm transition-colors',
+                    'aspect-square rounded text-sm transition-colors duration-150',
                     session?.status === 'generated' && 'bg-green-900/50 text-green-300 hover:bg-green-900/70',
                     session?.status === 'held' && 'bg-amber-900/50 text-amber-300 hover:bg-amber-900/70',
                     !session && 'text-gray-600',
@@ -95,11 +113,23 @@ export default function CalendarPage() {
               );
             })}
           </div>
+
+          <div className="mt-4 flex items-center gap-4 border-t border-[#1A3C5E] pt-3 text-xs text-gray-500">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-green-900/50" aria-hidden /> Generated
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm bg-amber-900/50" aria-hidden /> Held
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-sm ring-1 ring-[#C8973A]" aria-hidden /> Today
+            </span>
+          </div>
         </div>
       )}
 
       {selectedSession && (
-        <div className="mt-4 rounded-lg border border-[#1A3C5E] bg-[#0F2236] p-4">
+        <div className="mt-4 rounded-2xl border border-[#1A3C5E] bg-[#0F2236] p-4">
           <p className="mb-2 font-semibold text-white">{format(new Date(selectedSession.date), 'PPPP')}</p>
           {selectedSession.status === 'generated' ? (
             <div className="space-y-1 text-sm text-gray-300">

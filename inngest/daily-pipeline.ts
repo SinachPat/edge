@@ -82,16 +82,36 @@ export const dailyPipeline = inngest.createFunction(
         throw new Error(`Failed to create session: ${sessionError?.message}`);
       }
 
-      const indexToPickId = new Map<string, string>();
-      const stakeByIndex = new Map<string, number>();
-
-      for (const [index, pick] of reasonedPicks.entries()) {
-        const { stakePct, stakeAmount } = calculateStake({
+      // Kelly-size every pick first, then enforce the session-level ceiling:
+      // per-tier caps alone allow nine picks to sum well past the PRD's hard
+      // 6% max-at-risk rule, so scale all stakes down proportionally if the
+      // session total exceeds it (preserves relative Kelly sizing).
+      const MAX_SESSION_STAKE_PCT = 6;
+      const stakes = reasonedPicks.map((pick) =>
+        calculateStake({
           odds: pick.odds,
           confidencePct: pick.confidencePct,
           confidenceTier: pick.finalConfidenceTier,
           bankrollBalance,
-        });
+        })
+      );
+      const totalStakePct = stakes.reduce((sum, s) => sum + s.stakePct, 0);
+      if (totalStakePct > MAX_SESSION_STAKE_PCT) {
+        const scale = MAX_SESSION_STAKE_PCT / totalStakePct;
+        for (const s of stakes) {
+          s.stakePct = Number((s.stakePct * scale).toFixed(2));
+          s.stakeAmount = Number((s.stakeAmount * scale).toFixed(2));
+        }
+        console.warn(
+          `[daily-pipeline] session stake ${totalStakePct.toFixed(2)}% exceeded the ${MAX_SESSION_STAKE_PCT}% cap — scaled all stakes by ${scale.toFixed(3)}`
+        );
+      }
+
+      const indexToPickId = new Map<string, string>();
+      const stakeByIndex = new Map<string, number>();
+
+      for (const [index, pick] of reasonedPicks.entries()) {
+        const { stakePct, stakeAmount } = stakes[index];
 
         const { data: insertedPick, error: pickError } = await supabase
           .from('picks')

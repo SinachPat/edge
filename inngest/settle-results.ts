@@ -6,8 +6,8 @@ import type { Pick } from '@/types/edge';
 
 export type SettlementResult = 'won' | 'lost' | 'void';
 
-// Narrowed to just the two fields this actually reads — lets callers (e.g.
-// the backtest script) pass a partial pick shape without an unsafe cast.
+// Narrowed to just the two fields this actually reads, so callers can pass a
+// partial pick shape without an unsafe cast.
 export function evaluatePickResult(
   pick: { market_type: Pick['market_type']; selection: Pick['selection'] },
   result: { homeGoals: number; awayGoals: number }
@@ -15,6 +15,13 @@ export function evaluatePickResult(
   const market = `${pick.market_type} ${pick.selection}`.toLowerCase();
   const { homeGoals, awayGoals } = result;
   const total = homeGoals + awayGoals;
+
+  // We only fetch full-time scores. Half-time and timing markets can't be
+  // graded from that — without this guard, "First Half result Home" would
+  // match the 1x2/result branch below and settle against the 90' score.
+  if (market.includes('first half') || market.includes('1st half') || market.includes('half time') || market.includes('half-time')) {
+    return 'void';
+  }
 
   if (market.includes('btts') || market.includes('both teams to score')) {
     if (market.includes('yes')) return homeGoals > 0 && awayGoals > 0 ? 'won' : 'lost';
@@ -80,7 +87,7 @@ export const settleResults = inngest.createFunction(
       for (const pick of pending) {
         if (!pick.fixture_id) continue;
         const result = await getFixtureResult(Number(pick.fixture_id));
-        if (!result || result.status !== 'FT') continue; // match not finished yet
+        if (!result || !result.finished) continue; // match not finished yet
 
         const outcome = evaluatePickResult(pick, result);
         await supabase
@@ -125,25 +132,33 @@ export const settleResults = inngest.createFunction(
       let lossCount = 0;
 
       for (const ticket of pendingTickets ?? []) {
-        const { data: legs } = await supabase.from('picks').select('status').in('id', ticket.pick_ids);
+        const { data: legs } = await supabase.from('picks').select('status, odds').in('id', ticket.pick_ids);
         if (!legs || legs.length !== ticket.pick_ids.length || legs.some((leg) => leg.status === 'pending')) {
           continue; // not all legs settled yet
         }
 
-        const allWon = legs.every((leg) => leg.status === 'won');
+        // Standard accumulator settlement: a void leg drops out at odds 1.0
+        // rather than losing the ticket. The ticket only loses if a decided
+        // leg lost; if every leg voided, the stake is returned (P&L 0).
+        const anyLost = legs.some((leg) => leg.status === 'lost');
+        const effectiveOdds = legs
+          .filter((leg) => leg.status === 'won')
+          .reduce((product, leg) => product * Number(leg.odds), 1);
+
         const stake = ticket.total_stake ?? 0;
-        const profitLoss = allWon ? stake * ticket.combined_odds - stake : -stake;
-        const totalReturn = allWon ? stake * ticket.combined_odds : 0;
+        const won = !anyLost;
+        const totalReturn = won ? stake * effectiveOdds : 0;
+        const profitLoss = totalReturn - stake;
 
         await supabase
           .from('tickets')
-          .update({ status: allWon ? 'won' : 'lost', profit_loss: profitLoss, total_return: totalReturn })
+          .update({ status: won ? 'won' : 'lost', profit_loss: profitLoss, total_return: totalReturn })
           .eq('id', ticket.id);
 
         totalPnl += profitLoss;
         totalStaked += stake;
         totalReturned += totalReturn;
-        if (allWon) winCount += 1;
+        if (won) winCount += 1;
         else lossCount += 1;
       }
 

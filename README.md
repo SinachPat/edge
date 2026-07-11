@@ -24,20 +24,34 @@ Full product spec: [EDGE_PRD_v1.1.md](EDGE_PRD_v1.1.md). Build sequence:
    ```
 3. Apply the database schema — paste each file in `supabase/migrations/` (in order)
    into your Supabase project's SQL editor and run it.
-4. Create your login — there's no public signup page by design (this is a private,
-   single-user app). In the Supabase dashboard: **Authentication → Users → Add user**,
-   set an email + password, and use those to sign in at `/login`.
-5. Start the dev server:
+4. Start the dev server:
    ```
    npm run dev
    ```
+5. Visit `/signup` and create your account.
+6. To enable password reset, edit your Supabase project's **Reset Password** email
+   template (Authentication → Email Templates): replace the default link with
+   ```
+   {{ .SiteURL }}/api/auth/confirm?token_hash={{ .TokenHash }}&type=recovery&next={{ .RedirectTo }}
+   ```
+   Supabase's default template points at its own hosted verify page, which returns
+   the session as a URL fragment the server can't see — since this app checks auth
+   in `proxy.ts` (server-side, before any client JS runs), that default flow would
+   redirect a recovering user to `/login` before their session ever got picked up.
+   The template above sends them through `/api/auth/confirm` instead, which
+   establishes the session as a cookie server-side.
 
 ## Authentication
 
 Every page and API route requires a signed-in Supabase Auth session — `proxy.ts`
 redirects unauthenticated visitors to `/login`, and every tRPC procedure
 (`server/trpc.ts`'s `protectedProcedure`) rejects unauthenticated requests independently.
-There's no self-serve signup; add users manually via the Supabase dashboard (step 4 above).
+
+`/signup` creates the first account for anyone (there's nothing to gate yet), and
+after that only works for someone who's already signed in — so you can add more
+accounts whenever you want from inside the app, but a stranger who finds the URL
+can't self-register once you exist. Forgot your password? `/forgot-password` →
+check your email → `/reset-password`.
 
 ## Triggering the pipeline manually
 

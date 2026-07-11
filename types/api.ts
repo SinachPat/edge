@@ -59,6 +59,11 @@ export interface ApiFootballFixture {
     readonly home: number | null;
     readonly away: number | null;
   };
+  // score.fulltime is the 90-minute score; goals includes extra time when a
+  // match goes to AET, and betting markets settle on the 90-minute result.
+  readonly score?: {
+    readonly fulltime: { readonly home: number | null; readonly away: number | null };
+  };
 }
 
 export interface ApiFootballPrediction {

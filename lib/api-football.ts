@@ -87,15 +87,23 @@ export async function getTeamStats(leagueId: number, season: number, teamId: num
   return results[0] ?? results;
 }
 
+// Statuses that mean the match produced a final result. AET/PEN matter for
+// Champions League knockouts — a match decided in extra time still settles.
+const FINISHED_STATUSES = new Set(['FT', 'AET', 'PEN']);
+
 export async function getFixtureResult(
   fixtureId: number
-): Promise<{ homeGoals: number; awayGoals: number; status: string } | null> {
+): Promise<{ homeGoals: number; awayGoals: number; status: string; finished: boolean } | null> {
   const results = await fetchFootball<ApiFootballFixture>('/fixtures', { id: fixtureId });
   const fixture = results[0];
-  if (!fixture || fixture.goals.home === null || fixture.goals.away === null) return null;
-  return {
-    homeGoals: fixture.goals.home,
-    awayGoals: fixture.goals.away,
-    status: fixture.fixture.status.short,
-  };
+  if (!fixture) return null;
+
+  // Betting markets settle on the 90-minute score. For AET/PEN matches,
+  // fixture.goals includes extra time — score.fulltime is the 90' result.
+  const homeGoals = fixture.score?.fulltime.home ?? fixture.goals.home;
+  const awayGoals = fixture.score?.fulltime.away ?? fixture.goals.away;
+  if (homeGoals === null || awayGoals === null) return null;
+
+  const status = fixture.fixture.status.short;
+  return { homeGoals, awayGoals, status, finished: FINISHED_STATUSES.has(status) };
 }

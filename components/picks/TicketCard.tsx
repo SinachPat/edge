@@ -37,12 +37,17 @@ export function TicketCard({
   return (
     <div
       className={clsx(
-        'rounded-lg border border-t-4 border-[#1A3C5E] bg-[#0F2236]',
+        'rounded-lg border border-t-4 border-[#1A3C5E] bg-[#0F2236] transition-shadow duration-150',
         config.border,
         STATUS_RING[ticket.status]
       )}
     >
-      <button type="button" onClick={() => setExpanded((prev) => !prev)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-3 rounded-b-lg px-4 py-3 text-left transition-colors duration-150 hover:bg-white/[0.02] focus-visible:ring-1 focus-visible:ring-[#C8973A]/50 focus-visible:outline-none"
+      >
         <span aria-hidden>{config.icon}</span>
         <span className="font-bold text-white">{config.label}</span>
         <span className="text-xs text-gray-500">x3 picks</span>

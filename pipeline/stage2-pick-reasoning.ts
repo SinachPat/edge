@@ -11,7 +11,9 @@ export async function runStage2(candidates: SignalScore[]): Promise<ReasonedPick
     model: MODEL_CONFIG.STAGE_2,
     systemPrompt: STAGE_2_SYSTEM_PROMPT,
     userContent: JSON.stringify(selected),
-    maxTokens: 8192,
+    // 9 picks × (echoed signal fields + rationale) can brush past 8k output
+    // tokens, and truncation aborts the whole session — keep real headroom.
+    maxTokens: 16000,
     stage: 2,
   });
 

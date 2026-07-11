@@ -47,8 +47,8 @@ export function Nav() {
                   key={href}
                   href={href}
                   className={clsx(
-                    'flex items-center gap-3 rounded px-3 py-2 text-sm font-medium transition-colors',
-                    active ? 'bg-[#1A3C5E] text-[#C8973A]' : 'text-gray-400 hover:text-white'
+                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150',
+                    active ? 'bg-[#1A3C5E] text-[#C8973A]' : 'text-gray-400 hover:bg-[#0F2236] hover:text-white'
                   )}
                 >
                   <Icon size={18} />
@@ -69,7 +69,7 @@ export function Nav() {
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex items-center gap-2 text-xs text-gray-500 hover:text-white"
+            className="flex items-center gap-2 text-xs text-gray-500 transition-colors duration-150 hover:text-white"
           >
             <LogOut size={14} />
             Sign out
@@ -86,8 +86,8 @@ export function Nav() {
               key={href}
               href={href}
               className={clsx(
-                'flex flex-1 flex-col items-center gap-0.5 py-2 text-xs',
-                active ? 'text-[#C8973A]' : 'text-gray-500'
+                'flex flex-1 flex-col items-center gap-0.5 border-t-2 py-2 text-xs transition-colors duration-150',
+                active ? 'border-[#C8973A] text-[#C8973A]' : 'border-transparent text-gray-500 hover:text-gray-300'
               )}
             >
               <Icon size={18} />

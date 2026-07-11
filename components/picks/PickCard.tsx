@@ -31,11 +31,12 @@ export function PickCard({
   const signalByLayer = new Map((pick.signal_log ?? []).map((s) => [s.layer, s]));
 
   return (
-    <div className="rounded-lg border border-[#1A3C5E] bg-[#0F2236]">
+    <div className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] transition-colors duration-150 hover:border-[#2A4C6E]">
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
-        className="flex w-full items-center gap-4 px-4 py-3 text-left"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-4 rounded-lg px-4 py-3 text-left transition-colors duration-150 hover:bg-white/[0.02] focus-visible:ring-1 focus-visible:ring-[#C8973A]/50 focus-visible:outline-none"
       >
         <div className="flex flex-col gap-1.5">
           <TierBadge tier={pick.confidence_tier} pct={pick.confidence_pct ?? undefined} />

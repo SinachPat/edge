@@ -1,7 +1,14 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PAGE_PATHS = ['/login'];
+// Reachable without a signed-in session.
+const PUBLIC_PAGE_PATHS = ['/', '/login', '/signup', '/forgot-password'];
+
+// Bounced to /dashboard if the visitor is already signed in — /signup is
+// deliberately excluded so a signed-in owner can still reach it to add more
+// accounts, and /reset-password is excluded so a recovery session (which
+// getUser() also reports as "signed in") can complete the reset form.
+const REDIRECT_IF_AUTHED_PATHS = ['/', '/login', '/forgot-password'];
 
 // Refreshes the Supabase session cookie on every request and redirects to
 // /login when there's no authenticated user. Only runs on page routes — see
@@ -35,7 +42,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublicPath = PUBLIC_PAGE_PATHS.some((path) => request.nextUrl.pathname.startsWith(path));
+  const pathname = request.nextUrl.pathname;
+  const isPublicPath = PUBLIC_PAGE_PATHS.some((path) => path === '/' ? pathname === '/' : pathname.startsWith(path));
+  const isRedirectIfAuthedPath = REDIRECT_IF_AUTHED_PATHS.some((path) => (path === '/' ? pathname === '/' : pathname.startsWith(path)));
 
   if (!user && !isPublicPath) {
     const loginUrl = request.nextUrl.clone();
@@ -43,7 +52,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(loginUrl);
   }
 
-  if (user && isPublicPath) {
+  if (user && isRedirectIfAuthedPath) {
     const dashboardUrl = request.nextUrl.clone();
     dashboardUrl.pathname = '/dashboard';
     return NextResponse.redirect(dashboardUrl);

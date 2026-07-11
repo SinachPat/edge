@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { trpc } from '@/lib/trpc-client';
 import { TierBadge } from '@/components/picks/TierBadge';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { ConfidenceTier, PickStatus } from '@/types/edge';
 
 const PAGE_SIZE = 50;
@@ -32,6 +33,8 @@ export default function HistoryPage() {
 
   const detail = trpc.picks.getById.useQuery(expandedId ?? '', { enabled: Boolean(expandedId) });
 
+  const hasAnyPicks = (picks?.length ?? 0) > 0;
+
   const filtered = useMemo(() => {
     const rows = picks ?? [];
     return rows
@@ -47,6 +50,7 @@ export default function HistoryPage() {
 
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const filtersActive = statusFilter !== 'all' || tierFilter !== 'all';
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -57,11 +61,17 @@ export default function HistoryPage() {
     }
   }
 
+  function resetFilters() {
+    setStatusFilter('all');
+    setTierFilter('all');
+    setPage(0);
+  }
+
   return (
     <div className="min-h-screen bg-[#0D1B2A] px-4 py-8 sm:px-8">
       <h1 className="mb-6 text-2xl font-bold text-white">Pick History</h1>
 
-      {stats && (
+      {hasAnyPicks && stats && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard label="Total Picks" value={stats.totalPicks} />
           <StatCard label="Win Rate" value={`${stats.winRate.toFixed(1)}%`} />
@@ -70,22 +80,48 @@ export default function HistoryPage() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((s) => (
-          <FilterPill key={s} active={statusFilter === s} onClick={() => { setStatusFilter(s); setPage(0); }}>
-            {s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)}
-          </FilterPill>
-        ))}
-        <span className="mx-1 text-gray-700">|</span>
-        {TIER_FILTERS.map((t) => (
-          <FilterPill key={t} active={tierFilter === t} onClick={() => { setTierFilter(t); setPage(0); }}>
-            {t === 'all' ? 'All Tiers' : t}
-          </FilterPill>
-        ))}
-      </div>
+      {hasAnyPicks && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((s) => (
+            <FilterPill
+              key={s}
+              active={statusFilter === s}
+              onClick={() => {
+                setStatusFilter(s);
+                setPage(0);
+              }}
+            >
+              {s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)}
+            </FilterPill>
+          ))}
+          <span className="mx-1 text-gray-700">|</span>
+          {TIER_FILTERS.map((t) => (
+            <FilterPill
+              key={t}
+              active={tierFilter === t}
+              onClick={() => {
+                setTierFilter(t);
+                setPage(0);
+              }}
+            >
+              {t === 'all' ? 'All Tiers' : t}
+            </FilterPill>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
-        <div className="h-64 animate-pulse rounded-lg bg-[#0F2236]" />
+        <div className="h-64 animate-pulse rounded-2xl bg-[#0F2236]" />
+      ) : !hasAnyPicks ? (
+        <EmptyState icon="⬡" title="No picks yet">
+          <p>Once EDGE generates its first session, every pick — settled or pending — will show up here.</p>
+        </EmptyState>
+      ) : pageRows.length === 0 ? (
+        <EmptyState icon="⌕" title="No picks match those filters">
+          <button type="button" onClick={resetFilters} className="mt-3 text-sm font-medium text-[#C8973A] hover:underline">
+            Clear filters
+          </button>
+        </EmptyState>
       ) : (
         <>
           {/* Desktop table */}
@@ -93,18 +129,24 @@ export default function HistoryPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-[#0F2236] text-gray-400">
                 <tr>
-                  <Th onClick={() => toggleSort('date')}>Date</Th>
-                  <th className="px-3 py-2">Match</th>
-                  <th className="px-3 py-2">Score</th>
-                  <th className="px-3 py-2">Competition</th>
-                  <th className="px-3 py-2">Market</th>
-                  <th className="px-3 py-2">Selection</th>
-                  <Th onClick={() => toggleSort('odds')}>Odds</Th>
-                  <th className="px-3 py-2">Tier</th>
-                  <Th onClick={() => toggleSort('ev_score')}>EV</Th>
-                  <th className="px-3 py-2">Signals</th>
-                  <th className="px-3 py-2">CLV</th>
-                  <th className="px-3 py-2">Status</th>
+                  <Th onClick={() => toggleSort('date')} active={sortKey === 'date'} dir={sortDir}>
+                    Date
+                  </Th>
+                  <th className="px-3 py-2 font-medium">Match</th>
+                  <th className="px-3 py-2 font-medium">Score</th>
+                  <th className="px-3 py-2 font-medium">Competition</th>
+                  <th className="px-3 py-2 font-medium">Market</th>
+                  <th className="px-3 py-2 font-medium">Selection</th>
+                  <Th onClick={() => toggleSort('odds')} active={sortKey === 'odds'} dir={sortDir}>
+                    Odds
+                  </Th>
+                  <th className="px-3 py-2 font-medium">Tier</th>
+                  <Th onClick={() => toggleSort('ev_score')} active={sortKey === 'ev_score'} dir={sortDir}>
+                    EV
+                  </Th>
+                  <th className="px-3 py-2 font-medium">Signals</th>
+                  <th className="px-3 py-2 font-medium">CLV</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -112,7 +154,7 @@ export default function HistoryPage() {
                   <Fragment key={pick.id}>
                     <tr
                       onClick={() => setExpandedId((id) => (id === pick.id ? null : pick.id))}
-                      className="cursor-pointer border-t border-[#1A3C5E] text-gray-300 hover:bg-[#0F2236]"
+                      className="cursor-pointer border-t border-[#1A3C5E] text-gray-300 transition-colors hover:bg-[#132A42]"
                     >
                       <td className="px-3 py-2">{pick.sessions?.date ?? new Date(pick.created_at).toLocaleDateString()}</td>
                       <td className="px-3 py-2">
@@ -171,6 +213,11 @@ export default function HistoryPage() {
                 </div>
                 <p className="font-medium text-white">
                   {pick.home_team} vs {pick.away_team}
+                  {pick.final_home_goals !== null && pick.final_away_goals !== null && (
+                    <span className="ml-2 text-sm font-normal text-gray-400">
+                      ({pick.final_home_goals}-{pick.final_away_goals})
+                    </span>
+                  )}
                 </p>
                 <p className="text-sm text-gray-400">
                   {pick.market_type} — {pick.selection}
@@ -183,29 +230,40 @@ export default function HistoryPage() {
             ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-sm text-gray-400">
-            <span>
-              Page {page + 1} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className="rounded border border-[#1A3C5E] px-3 py-1 disabled:opacity-40"
-              >
-                Prev
-              </button>
-              <button
-                type="button"
-                disabled={page >= totalPages - 1}
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                className="rounded border border-[#1A3C5E] px-3 py-1 disabled:opacity-40"
-              >
-                Next
-              </button>
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between text-sm text-gray-400">
+              <span>
+                Page {page + 1} of {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="rounded border border-[#1A3C5E] px-3 py-1 transition-colors hover:border-[#C8973A]/60 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                >
+                  Prev
+                </button>
+                <button
+                  type="button"
+                  disabled={page >= totalPages - 1}
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  className="rounded border border-[#1A3C5E] px-3 py-1 transition-colors hover:border-[#C8973A]/60 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+
+          {filtersActive && filtered.length > 0 && (
+            <p className="mt-3 text-xs text-gray-600">
+              Showing {filtered.length} of {picks?.length ?? 0} picks.{' '}
+              <button type="button" onClick={resetFilters} className="text-[#C8973A] hover:underline">
+                Clear filters
+              </button>
+            </p>
+          )}
         </>
       )}
     </div>
@@ -227,8 +285,8 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
       type="button"
       onClick={onClick}
       className={clsx(
-        'rounded-full border px-3 py-1 text-xs font-medium',
-        active ? 'border-[#C8973A] text-[#C8973A]' : 'border-[#1A3C5E] text-gray-400'
+        'rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150',
+        active ? 'border-[#C8973A] bg-[#C8973A]/10 text-[#C8973A]' : 'border-[#1A3C5E] text-gray-400 hover:border-gray-500 hover:text-white'
       )}
     >
       {children}
@@ -236,10 +294,26 @@ function FilterPill({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
-function Th({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function Th({
+  children,
+  onClick,
+  active,
+  dir,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  active: boolean;
+  dir: 'asc' | 'desc';
+}) {
   return (
-    <th className="cursor-pointer select-none px-3 py-2" onClick={onClick}>
-      {children}
+    <th
+      className={clsx('cursor-pointer px-3 py-2 font-medium transition-colors select-none hover:text-white', active && 'text-[#C8973A]')}
+      onClick={onClick}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {active && <span aria-hidden>{dir === 'asc' ? '↑' : '↓'}</span>}
+      </span>
     </th>
   );
 }
