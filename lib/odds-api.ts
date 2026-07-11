@@ -2,7 +2,10 @@ import { env } from './env';
 import type { OddsApiEvent } from '@/types/api';
 
 const BASE_URL = 'https://api.the-odds-api.com/v4';
-const DEFAULT_MARKETS = ['h2h', 'spreads', 'totals', 'btts', 'player_props'];
+// Only h2h/spreads/totals are valid on the bulk /odds endpoint. Additional
+// markets (btts, player props, alternates) are per-event, sport-specific keys —
+// requesting them here 422s the whole call. Fetch those via the event endpoint.
+const DEFAULT_MARKETS = ['h2h', 'spreads', 'totals'];
 const DEFAULT_REGIONS = 'eu,uk';
 
 export const SPORT_KEYS = {

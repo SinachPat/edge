@@ -38,11 +38,14 @@ export interface Pick {
   signal_count: number;
   rationale: string;
   key_risk: string | null;
+  best_odds_book: string | null;
   stake_pct: number;
   stake_amount: number | null;
   status: PickStatus;
   closing_odds: number | null;
   clv: number | null;
+  final_home_goals: number | null;
+  final_away_goals: number | null;
   created_at: string;
   settled_at: string | null;
 }
@@ -56,6 +59,7 @@ export interface Ticket {
   total_stake: number | null;
   total_return: number | null;
   profit_loss: number | null;
+  assembly_note: string | null;
   status: 'pending' | 'won' | 'lost';
   created_at: string;
 }
@@ -106,6 +110,7 @@ export interface SignalScore {
   readonly awayTeam: string;
   readonly competition: string;
   readonly sport: string;
+  readonly matchDate: string; // ISO 8601 kickoff time
   readonly marketType: string;
   readonly selection: string;
   readonly odds: number;

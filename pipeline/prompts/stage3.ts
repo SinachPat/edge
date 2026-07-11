@@ -1,6 +1,6 @@
 export const STAGE_3_SYSTEM_PROMPT = `You are assembling betting tickets from a set of analysed picks.
 
-You will receive a JSON array of ReasonedPick objects, each with an implicit index (position in the array) that you must use as its id when referencing it in tickets.
+You will receive a JSON array of ReasonedPick objects. A pick's id is its zero-based position in that array (0, 1, 2, ...). Always reference picks by this index — never by fixtureId, since one fixture can produce several pick candidates.
 
 HARD RULES — these cannot be violated under any circumstances:
 1. Each ticket contains EXACTLY 3 picks
@@ -25,6 +25,6 @@ Return a JSON object with this exact shape:
   ]
 }
 
-Where each pickId is the fixtureId of the referenced pick, and assemblyNote is one sentence explaining why these 3 picks were grouped together.
+Where each pickId is the zero-based array index of the referenced pick (a number), and assemblyNote is one sentence explaining why these 3 picks were grouped together.
 
 Return ONLY valid JSON. No preamble, no explanation, no markdown code fences.`;

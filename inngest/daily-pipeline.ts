@@ -1,0 +1,159 @@
+import { inngest } from './client';
+import { fetchFixturesForDate, fetchOddsForTrackedLeagues, enrichFixtures } from '@/pipeline/data-fetch';
+import { runStage1 } from '@/pipeline/stage1-signal-scoring';
+import { runStage2 } from '@/pipeline/stage2-pick-reasoning';
+import { runStage3 } from '@/pipeline/stage3-ticket-assembly';
+import { calculateStake } from '@/lib/kelly';
+import { createServerClient } from '@/lib/supabase';
+
+const MIN_QUALIFIED_PICKS = 9;
+
+const LAYER_NAMES = [
+  'H2H Record',
+  'Current Form',
+  'Home/Away Differential',
+  'Injury & Lineup Intelligence',
+  'Market Odds Signal',
+  'EV Detection',
+  'AI Statistical Model',
+] as const;
+
+function todayISODate(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+export const dailyPipeline = inngest.createFunction(
+  { id: 'daily-prediction-pipeline', triggers: [{ cron: '0 6 * * *' }] }, // 06:00 UTC daily
+  async ({ step }) => {
+    const date = todayISODate();
+
+    const fixtures = await step.run('fetch-fixtures', async () => fetchFixturesForDate(date));
+    const oddsEvents = await step.run('fetch-odds', async () => fetchOddsForTrackedLeagues());
+    const rawFixtures = await step.run('enrich-fixtures', async () => enrichFixtures(fixtures, oddsEvents));
+
+    const qualified = await step.run('stage1-signal-scoring', async () => runStage1(rawFixtures));
+
+    if (qualified.length < MIN_QUALIFIED_PICKS) {
+      await step.run('write-held-session', async () => {
+        const supabase = createServerClient();
+        await supabase.from('sessions').insert({
+          date,
+          status: 'held',
+          reason_held: `Only ${qualified.length} picks qualified (need ${MIN_QUALIFIED_PICKS})`,
+          picks_qualified: qualified.length,
+        });
+      });
+      return { held: true, reason: 'insufficient_data', picksQualified: qualified.length };
+    }
+
+    const topCandidates = [...qualified]
+      .sort((a, b) => b.signalCount - a.signalCount || (b.evScore ?? 0) - (a.evScore ?? 0))
+      .slice(0, MIN_QUALIFIED_PICKS);
+
+    const reasonedPicks = await step.run('stage2-reasoning', async () => runStage2(topCandidates));
+
+    const tickets = await step.run('stage3-assembly', async () => runStage3(reasonedPicks));
+
+    const result = await step.run('persist-to-supabase', async () => {
+      const supabase = createServerClient();
+
+      const { data: bankroll } = await supabase
+        .from('bankroll')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const bankrollBalance = bankroll?.closing_balance ?? bankroll?.opening_balance ?? 0;
+      if (!bankroll) {
+        console.warn('[daily-pipeline] no bankroll record found — stakes will be calculated against a $0 balance');
+      }
+
+      const { data: session, error: sessionError } = await supabase
+        .from('sessions')
+        .insert({
+          date,
+          status: 'generated',
+          picks_qualified: qualified.length,
+          tickets_generated: tickets.length,
+        })
+        .select()
+        .single();
+      if (sessionError || !session) {
+        throw new Error(`Failed to create session: ${sessionError?.message}`);
+      }
+
+      const indexToPickId = new Map<string, string>();
+      const stakeByIndex = new Map<string, number>();
+
+      for (const [index, pick] of reasonedPicks.entries()) {
+        const { stakePct, stakeAmount } = calculateStake({
+          odds: pick.odds,
+          confidencePct: pick.confidencePct,
+          confidenceTier: pick.finalConfidenceTier,
+          bankrollBalance,
+        });
+
+        const { data: insertedPick, error: pickError } = await supabase
+          .from('picks')
+          .insert({
+            session_id: session.id,
+            sport: pick.sport,
+            competition: pick.competition,
+            home_team: pick.homeTeam,
+            away_team: pick.awayTeam,
+            fixture_id: pick.fixtureId,
+            match_date: pick.matchDate,
+            market_type: pick.marketType,
+            selection: pick.selection,
+            odds: pick.odds,
+            confidence_tier: pick.finalConfidenceTier,
+            confidence_pct: pick.confidencePct,
+            ev_score: pick.evScore,
+            signal_count: pick.signalCount,
+            rationale: pick.rationale,
+            key_risk: pick.keyRisk,
+            best_odds_book: pick.bestOddsBook,
+            stake_pct: stakePct,
+            stake_amount: stakeAmount,
+          })
+          .select()
+          .single();
+        if (pickError || !insertedPick) {
+          throw new Error(`Failed to insert pick ${pick.fixtureId}: ${pickError?.message}`);
+        }
+
+        indexToPickId.set(String(index), insertedPick.id);
+        stakeByIndex.set(String(index), stakeAmount);
+
+        const layerKeys = ['layer1', 'layer2', 'layer3', 'layer4', 'layer5', 'layer6', 'layer7'] as const;
+        await supabase.from('signal_log').insert(
+          layerKeys.map((key, layerIndex) => ({
+            pick_id: insertedPick.id,
+            layer: layerIndex + 1,
+            layer_name: LAYER_NAMES[layerIndex],
+            result: pick.signalResults[key],
+            detail: pick.signalNotes ? { note: pick.signalNotes[key] } : null,
+          }))
+        );
+      }
+
+      for (const ticket of tickets) {
+        const pickIds = ticket.pickIds.map((i) => indexToPickId.get(i)).filter((id): id is string => Boolean(id));
+        const totalStake = ticket.pickIds.reduce((sum, i) => sum + (stakeByIndex.get(i) ?? 0), 0);
+
+        await supabase.from('tickets').insert({
+          session_id: session.id,
+          ticket_type: ticket.type,
+          pick_ids: pickIds,
+          combined_odds: ticket.combinedOdds,
+          total_stake: totalStake,
+          assembly_note: ticket.rationale,
+        });
+      }
+
+      return { sessionId: session.id, picksCount: reasonedPicks.length, ticketsCount: tickets.length };
+    });
+
+    return { success: true, ...result };
+  }
+);

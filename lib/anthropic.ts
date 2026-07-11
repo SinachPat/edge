@@ -67,6 +67,15 @@ export async function callClaude(params: CallClaudeParams): Promise<string> {
     `[anthropic] stage ${stage} model=${model} input_tokens=${response.usage.input_tokens} output_tokens=${response.usage.output_tokens}`
   );
 
+  if (response.stop_reason === 'max_tokens') {
+    throw new EdgeAIError(
+      `Stage ${stage} output truncated at ${maxTokens} tokens — raise maxTokens`,
+      JSON.stringify(response.content),
+      stage,
+      model
+    );
+  }
+
   const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === 'text');
   if (!textBlock) {
     throw new EdgeAIError(`No text block in stage ${stage} response`, JSON.stringify(response.content), stage, model);

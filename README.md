@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# EDGE
 
-## Getting Started
+Personal sports prediction platform. A 3-stage Claude pipeline (Sonnet → Opus → Sonnet)
+scores fixtures against a 7-signal framework, reasons about the qualifying picks, and
+assembles 3 daily betting tickets — surfaced on a dashboard with bankroll tracking.
 
-First, run the development server:
+Full product spec: [EDGE_PRD_v1.1.md](EDGE_PRD_v1.1.md). Build sequence:
+[EDGE_Claude_Code_Prompts_v1.md](EDGE_Claude_Code_Prompts_v1.md).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Prerequisites
+
+- Node.js 18+
+- Accounts + API keys for: The Odds API, API-Football, SharpAPI, Anthropic, Supabase, Inngest
+
+## Setup
+
+1. Install dependencies:
+   ```
+   npm install
+   ```
+2. Copy the env template and fill in your keys:
+   ```
+   cp .env.local.example .env.local
+   ```
+3. Apply the database schema — paste each file in `supabase/migrations/` (in order)
+   into your Supabase project's SQL editor and run it.
+4. Create your login — there's no public signup page by design (this is a private,
+   single-user app). In the Supabase dashboard: **Authentication → Users → Add user**,
+   set an email + password, and use those to sign in at `/login`.
+5. Start the dev server:
+   ```
+   npm run dev
+   ```
+
+## Authentication
+
+Every page and API route requires a signed-in Supabase Auth session — `proxy.ts`
+redirects unauthenticated visitors to `/login`, and every tRPC procedure
+(`server/trpc.ts`'s `protectedProcedure`) rejects unauthenticated requests independently.
+There's no self-serve signup; add users manually via the Supabase dashboard (step 4 above).
+
+## Triggering the pipeline manually
+
+The daily pipeline (`daily-prediction-pipeline`) and settlement function
+(`settle-results`) are registered at `/api/inngest`. In local dev, run the
+[Inngest Dev Server](https://www.inngest.com/docs/dev-server) alongside `npm run dev`:
+
+```
+npx inngest-cli@latest dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open the Inngest dashboard it prints, find the function, and use "Invoke" to trigger a
+run on demand instead of waiting for the 06:00 / 22:00 UTC cron schedules.

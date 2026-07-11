@@ -21,6 +21,7 @@ Return a JSON array where each object has exactly these fields:
 - awayTeam: string
 - competition: string
 - sport: string
+- matchDate: string (ISO 8601 kickoff timestamp, taken directly from the fixture data)
 - marketType: string (e.g. 'BTTS Yes', 'Double Chance 1X', 'Asian Handicap -0.5')
 - selection: string (the exact bet option)
 - odds: number

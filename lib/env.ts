@@ -29,5 +29,7 @@ function loadEnv() {
   return parsed.data;
 }
 
-// All app code must import env from here — never read process.env directly.
+// Server-side code must import env from here — never read process.env directly.
+// Do NOT import this from client components: it validates server-only vars,
+// which don't exist in the browser. Browser code uses lib/supabase-browser.ts.
 export const env = loadEnv();

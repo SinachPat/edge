@@ -1,0 +1,7 @@
+{
+  "framework": "nextjs",
+  "functions": {
+    "app/api/inngest/route.ts": { "maxDuration": 300 },
+    "app/api/trpc/**": { "maxDuration": 30 }
+  }
+}

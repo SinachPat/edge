@@ -8,7 +8,7 @@ export async function runStage1(fixtures: RawFixtureData[]): Promise<SignalScore
       model: MODEL_CONFIG.STAGE_1,
       systemPrompt: STAGE_1_SYSTEM_PROMPT,
       userContent: JSON.stringify(fixtures),
-      maxTokens: 4096,
+      maxTokens: 16000,
       stage: 1,
     });
 

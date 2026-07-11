@@ -8,12 +8,12 @@ const REQUIRED_TICKET_TYPES: TicketType[] = ['anchor', 'value', 'diversified'];
 
 interface RawTicket {
   type: TicketType;
-  picks: string[];
+  picks: number[]; // zero-based indices into the input picks array
   combinedOdds: number;
   assemblyNote: string;
 }
 
-function validate(tickets: RawTicket[]): string | null {
+function validate(tickets: RawTicket[], pickCount: number): string | null {
   if (tickets.length !== 3) {
     return `Expected exactly 3 tickets, got ${tickets.length}`;
   }
@@ -35,15 +35,21 @@ function validate(tickets: RawTicket[]): string | null {
     if (ticket.combinedOdds > COMBINED_ODDS_CAP + ODDS_TOLERANCE) {
       return `Ticket "${ticket.type}" combined odds ${ticket.combinedOdds} exceeds the 3.00 cap`;
     }
+    const badIndex = ticket.picks.find((i) => !Number.isInteger(i) || i < 0 || i >= pickCount);
+    if (badIndex !== undefined) {
+      return `Ticket "${ticket.type}" references invalid pick index ${badIndex}`;
+    }
   }
 
   return null;
 }
 
 function toAssembledTickets(tickets: RawTicket[]): AssembledTicket[] {
+  // pickIds carry the pick's index in the Stage 2 output array; the persist
+  // step maps these to database UUIDs after inserting the picks.
   return tickets.map((t) => ({
     type: t.type,
-    pickIds: t.picks,
+    pickIds: t.picks.map(String),
     combinedOdds: t.combinedOdds,
     rationale: t.assemblyNote,
   }));
@@ -61,7 +67,7 @@ export async function runStage3(picks: ReasonedPick[]): Promise<AssembledTicket[
   });
 
   let { tickets } = parseJsonResponse<{ tickets: RawTicket[] }>(raw);
-  let violation = validate(tickets);
+  let violation = validate(tickets, picks.length);
 
   if (violation) {
     console.warn(`[stage3] validation failed, retrying once: ${violation}`);
@@ -75,7 +81,7 @@ export async function runStage3(picks: ReasonedPick[]): Promise<AssembledTicket[
     });
 
     ({ tickets } = parseJsonResponse<{ tickets: RawTicket[] }>(correctionRaw));
-    violation = validate(tickets);
+    violation = validate(tickets, picks.length);
     if (violation) {
       console.warn(`[stage3] validation still failing after retry: ${violation}`);
     }

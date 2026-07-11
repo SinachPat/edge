@@ -1,8 +1,9 @@
+// Server-side only — imports lib/env.ts, which validates server-only vars.
+// Client components must use lib/supabase-browser.ts instead.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from './env';
 
 let serverClient: SupabaseClient | undefined;
-let browserClient: SupabaseClient | undefined;
 
 // Service-role client — server-side only (Inngest functions, tRPC procedures). Bypasses RLS.
 export function createServerClient(): SupabaseClient {
@@ -12,12 +13,4 @@ export function createServerClient(): SupabaseClient {
     });
   }
   return serverClient;
-}
-
-// Anon-key client — safe to use in client components.
-export function createBrowserClient(): SupabaseClient {
-  if (!browserClient) {
-    browserClient = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  }
-  return browserClient;
 }
