@@ -37,34 +37,36 @@ export function Nav({ collapsed, onToggleCollapsed }: { collapsed: boolean; onTo
         )}
       >
         <div>
-          <div className={clsx('flex items-center py-5', collapsed ? 'justify-center px-2' : 'justify-between px-6')}>
-            <div className="flex items-center gap-2">
-              <span className="text-xl text-[#C8973A]" aria-hidden>
-                ⬡
-              </span>
-              {!collapsed && <span className="text-lg font-bold text-[#C8973A]">EDGE</span>}
-            </div>
-            {!collapsed && (
+          {/* The toggle lives in the same spot in both states (top of the
+              rail) so reversing a collapse is always where you'd look — and
+              in the collapsed state it's the full-width row, not a small
+              icon, so it can't be missed. */}
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+              className="flex w-full items-center justify-center py-5 text-[#C8973A] transition-colors duration-150 hover:bg-[#0F2236]"
+            >
+              <PanelLeftOpen size={20} />
+            </button>
+          ) : (
+            <div className="flex items-center justify-between px-6 py-5">
+              <div className="flex items-center gap-2">
+                <span className="text-xl text-[#C8973A]" aria-hidden>
+                  ⬡
+                </span>
+                <span className="text-lg font-bold text-[#C8973A]">EDGE</span>
+              </div>
               <button
                 type="button"
                 onClick={onToggleCollapsed}
                 aria-label="Collapse sidebar"
+                title="Collapse sidebar"
                 className="text-gray-500 transition-colors duration-150 hover:text-white"
               >
                 <PanelLeftClose size={18} />
-              </button>
-            )}
-          </div>
-
-          {collapsed && (
-            <div className="flex justify-center px-2 pb-3">
-              <button
-                type="button"
-                onClick={onToggleCollapsed}
-                aria-label="Expand sidebar"
-                className="text-gray-500 transition-colors duration-150 hover:text-white"
-              >
-                <PanelLeftOpen size={18} />
               </button>
             </div>
           )}
