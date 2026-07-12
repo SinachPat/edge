@@ -2,9 +2,23 @@
 
 import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
-import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, format, addMonths, subMonths, isToday } from 'date-fns';
+import {
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  getDay,
+  format,
+  addMonths,
+  subMonths,
+  addDays,
+  subDays,
+  isToday,
+} from 'date-fns';
 import { useSessions } from './useSessions';
+import { useFixtures } from './useFixtures';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { TierBadge } from '@/components/picks/TierBadge';
+import type { FixtureSummary } from '@/server/routers/fixtures';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -12,6 +26,9 @@ export default function CalendarPage() {
   const { byDate, isLoading } = useSessions();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  const [fixtureDate, setFixtureDate] = useState(() => new Date());
+  const { fixtures, error: fixturesError, isLoading: fixturesLoading } = useFixtures(fixtureDate);
 
   const allSessions = useMemo(() => Array.from(byDate.values()), [byDate]);
   const hasAnySessions = allSessions.length > 0;
@@ -37,6 +54,58 @@ export default function CalendarPage() {
   return (
     <div className="min-h-screen bg-[#0D1B2A] px-4 py-8 sm:px-8">
       <h1 className="mb-6 text-2xl font-bold text-white">Session Calendar</h1>
+
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">Fixtures</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFixtureDate((d) => subDays(d, 1))}
+              className="rounded px-2 py-1 text-gray-400 transition-colors hover:text-white"
+              aria-label="Previous day"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => setFixtureDate(new Date())}
+              className={clsx(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                isToday(fixtureDate) ? 'bg-[#C8973A]/20 text-[#C8973A]' : 'text-gray-500 hover:text-white'
+              )}
+            >
+              {isToday(fixtureDate) ? 'Today' : format(fixtureDate, 'EEE, MMM d')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFixtureDate((d) => addDays(d, 1))}
+              className="rounded px-2 py-1 text-gray-400 transition-colors hover:text-white"
+              aria-label="Next day"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+
+        {fixturesLoading ? (
+          <div className="h-40 animate-pulse rounded-2xl bg-[#0F2236]" />
+        ) : fixturesError ? (
+          <EmptyState icon="⚠" title="Fixtures unavailable for this date">
+            {fixturesError}
+          </EmptyState>
+        ) : fixtures.length === 0 ? (
+          <EmptyState icon="⬡" title="No tracked fixtures">
+            No EPL, Champions League, or La Liga matches on {format(fixtureDate, 'EEEE, MMMM d')}.
+          </EmptyState>
+        ) : (
+          <div className="space-y-2">
+            {fixtures.map((fixture) => (
+              <FixtureRow key={fixture.fixtureId} fixture={fixture} />
+            ))}
+          </div>
+        )}
+      </section>
 
       {hasAnySessions && (
         <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -157,6 +226,61 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
     <div className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] p-4">
       <p className="text-xs text-gray-500">{label}</p>
       <p className="text-xl font-bold text-white">{value}</p>
+    </div>
+  );
+}
+
+function FixtureRow({ fixture }: { fixture: FixtureSummary }) {
+  const hasScore = fixture.homeGoals !== null && fixture.awayGoals !== null;
+
+  return (
+    <div className="rounded-xl border border-[#1A3C5E] bg-[#0F2236] p-4">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-gray-500">{fixture.league}</p>
+          <p className="truncate text-sm font-medium text-white">
+            {fixture.homeTeam} <span className="text-gray-500">vs</span> {fixture.awayTeam}
+          </p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          {hasScore ? (
+            <p className="font-mono text-lg font-bold text-white">
+              {fixture.homeGoals} – {fixture.awayGoals}
+            </p>
+          ) : (
+            <p className="font-mono text-sm text-gray-300">{format(new Date(fixture.kickoff), 'h:mm a')}</p>
+          )}
+          <p className="text-xs text-gray-500">
+            {fixture.statusLong}
+            {fixture.elapsed !== null && ` · ${fixture.elapsed}'`}
+          </p>
+        </div>
+      </div>
+
+      {fixture.picks.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-[#1A3C5E] pt-3">
+          {fixture.picks.map((pick) => (
+            <div key={pick.id} className="flex items-center gap-1.5 text-xs">
+              <TierBadge tier={pick.confidenceTier} />
+              <span className="text-gray-400">
+                {pick.marketType} — {pick.selection}
+              </span>
+              <span
+                className={clsx(
+                  'font-medium',
+                  pick.status === 'won' && 'text-green-400',
+                  pick.status === 'lost' && 'text-red-400',
+                  pick.status === 'void' && 'text-gray-500',
+                  pick.status === 'pending' && 'text-amber-400'
+                )}
+              >
+                {pick.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
