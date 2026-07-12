@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { clsx } from 'clsx';
+import { Pencil } from 'lucide-react';
 import { trpc } from '@/lib/trpc-client';
 import { BankrollChart } from '@/components/ui/BankrollChart';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -51,6 +52,70 @@ function InitializeForm() {
   );
 }
 
+function AdjustBalanceForm({ currentBalance, onClose }: { currentBalance: number; onClose: () => void }) {
+  const utils = trpc.useUtils();
+  const [amount, setAmount] = useState(String(currentBalance));
+  const [note, setNote] = useState('');
+  const adjust = trpc.bankroll.adjustBalance.useMutation({
+    onSuccess: () => {
+      utils.bankroll.getCurrent.invalidate();
+      utils.bankroll.getOverallStats.invalidate();
+      utils.bankroll.getHistory.invalidate();
+      onClose();
+    },
+  });
+
+  const isValid = Number(amount) > 0;
+
+  return (
+    <div className="col-span-2 rounded-lg border border-[#1A3C5E] bg-[#0A1829] p-4 sm:col-span-4">
+      <p className="mb-3 text-sm text-gray-400">
+        Correct your balance — for a deposit, withdrawal, or fixing a mistaken starting number. This won&apos;t touch your
+        betting history or win/loss record.
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative flex-1">
+          <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-gray-500">₦</span>
+          <input
+            type="number"
+            min="1"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            autoFocus
+            className="w-full rounded-lg border border-[#1A3C5E] bg-[#0F2236] py-2 pr-3 pl-7 text-white outline-none transition-colors duration-150 focus:border-[#C8973A] focus:ring-1 focus:ring-[#C8973A]/40"
+          />
+        </div>
+        <input
+          type="text"
+          placeholder="Reason (optional)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={200}
+          className="flex-1 rounded-lg border border-[#1A3C5E] bg-[#0F2236] px-3 py-2 text-sm text-white outline-none transition-colors duration-150 focus:border-[#C8973A] focus:ring-1 focus:ring-[#C8973A]/40"
+        />
+      </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={adjust.isPending || !isValid}
+          onClick={() => adjust.mutate({ newBalance: Number(amount), note: note.trim() || undefined })}
+          className="rounded-lg bg-[#C8973A] px-4 py-2 text-sm font-semibold text-[#0D1B2A] transition-all duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-px active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+        >
+          {adjust.isPending ? 'Saving...' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg px-4 py-2 text-sm text-gray-400 transition-colors hover:text-white"
+        >
+          Cancel
+        </button>
+      </div>
+      {adjust.error && <p className="mt-2 text-sm text-red-400">{adjust.error.message}</p>}
+    </div>
+  );
+}
+
 function StatCard({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) {
   return (
     <div className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] p-4">
@@ -67,6 +132,7 @@ export default function BankrollPage() {
   const { data: stats } = trpc.bankroll.getOverallStats.useQuery();
   const { data: history } = trpc.bankroll.getHistory.useQuery({ days: 365 });
   const { data: tierBreakdown } = trpc.bankroll.getTierBreakdown.useQuery();
+  const [isAdjusting, setIsAdjusting] = useState(false);
 
   const hasSettledPicks = (tierBreakdown ?? []).some((row) => row.totalBets > 0);
 
@@ -88,7 +154,20 @@ export default function BankrollPage() {
       ) : (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Current Balance" value={`₦${(stats?.currentBalance ?? 0).toLocaleString()}`} />
+            <div className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">Current Balance</p>
+                <button
+                  type="button"
+                  onClick={() => setIsAdjusting((v) => !v)}
+                  aria-label="Edit balance"
+                  className="text-gray-500 transition-colors hover:text-[#C8973A]"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              </div>
+              <p className="text-xl font-bold text-white">₦{(stats?.currentBalance ?? 0).toLocaleString()}</p>
+            </div>
             <StatCard
               label="Total ROI"
               value={`${(stats?.totalROI ?? 0).toFixed(2)}%`}
@@ -100,6 +179,10 @@ export default function BankrollPage() {
               tone={(stats?.totalProfit ?? 0) >= 0 ? 'good' : 'bad'}
             />
             <StatCard label="Sessions" value={String(stats?.sessionsCount ?? 0)} />
+
+            {isAdjusting && (
+              <AdjustBalanceForm currentBalance={stats?.currentBalance ?? 0} onClose={() => setIsAdjusting(false)} />
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3">

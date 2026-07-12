@@ -77,6 +77,8 @@ export interface BankrollSnapshot {
   running_roi: number | null;
   win_count: number;
   loss_count: number;
+  adjustment_amount: number;
+  adjustment_note: string | null;
   created_at: string;
 }
 

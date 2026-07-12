@@ -72,9 +72,15 @@ export const bankrollRouter = router({
     const latest = rows[rows.length - 1];
     const currentBalance = latest.closing_balance ?? latest.opening_balance;
     const totalROI = latest.running_roi ?? 0;
-    const totalProfit = currentBalance - startingBalance;
+    // Manual adjustments (deposits/withdrawals/corrections) move the balance
+    // without being betting profit — exclude them so "Total P&L" reflects
+    // actual betting performance, not capital the user added or removed.
+    const totalAdjustments = rows.reduce((sum, r) => sum + (r.adjustment_amount ?? 0), 0);
+    const totalProfit = currentBalance - startingBalance - totalAdjustments;
 
-    const dailyPnls = rows.map((r) => (r.closing_balance ?? r.opening_balance) - r.opening_balance);
+    const dailyPnls = rows.map(
+      (r) => (r.closing_balance ?? r.opening_balance) - r.opening_balance - (r.adjustment_amount ?? 0)
+    );
     const bestDay = Math.max(...dailyPnls);
     const worstDay = Math.min(...dailyPnls);
 
@@ -159,4 +165,64 @@ export const bankrollRouter = router({
     if (error) throw new Error(error.message);
     return data;
   }),
+
+  // Corrects the current balance (deposit, withdrawal, or fixing a mistaken
+  // starting number) without touching betting history. Recorded as
+  // adjustment_amount on the affected day so ROI/streak/best-day stats keep
+  // measuring betting performance rather than capital moved in or out.
+  adjustBalance: protectedProcedure
+    .input(z.object({ newBalance: z.number().positive(), note: z.string().max(200).optional() }))
+    .mutation(async ({ input }) => {
+      const supabase = createServerClient();
+      const { data: latest } = await supabase
+        .from('bankroll')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!latest) {
+        throw new Error('Set up your bankroll first');
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const currentClosing = latest.closing_balance ?? latest.opening_balance;
+      const delta = input.newBalance - currentClosing;
+
+      if (latest.date === today) {
+        const { data, error } = await supabase
+          .from('bankroll')
+          .update({
+            closing_balance: input.newBalance,
+            adjustment_amount: (latest.adjustment_amount ?? 0) + delta,
+            adjustment_note: input.note ?? latest.adjustment_note ?? null,
+          })
+          .eq('date', today)
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        return data;
+      }
+
+      // No pipeline has run today yet — open a fresh row carrying the
+      // adjustment forward, same shape settle-results.ts writes.
+      const { data, error } = await supabase
+        .from('bankroll')
+        .insert({
+          date: today,
+          opening_balance: currentClosing,
+          closing_balance: input.newBalance,
+          adjustment_amount: delta,
+          adjustment_note: input.note ?? null,
+          total_staked: latest.total_staked ?? 0,
+          total_returned: latest.total_returned ?? 0,
+          win_count: latest.win_count ?? 0,
+          loss_count: latest.loss_count ?? 0,
+          running_roi: latest.running_roi ?? 0,
+          sessions_count: latest.sessions_count ?? 0,
+        })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    }),
 });
