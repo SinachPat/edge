@@ -1,5 +1,6 @@
-import { getUpcomingOdds, SPORT_KEYS } from '@/lib/odds-api';
+import { getEventOdds, getUpcomingOdds, SPORT_KEYS } from '@/lib/odds-api';
 import { getFixtures, getH2H, getInjuries, getPrediction, getTeamStats, LEAGUE_IDS } from '@/lib/api-football';
+import { normalizeName } from '@/lib/normalize';
 import type { ApiFootballFixture, OddsApiEvent } from '@/types/api';
 import type { RawFixtureData } from '@/types/edge';
 
@@ -12,20 +13,15 @@ export function currentSeason(): number {
   return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
 }
 
-function normalizeTeamName(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
 // Odds API and API-Football use unrelated ID systems for the same fixture —
 // match by normalized team names instead. This is a best-effort match; team
 // name spelling drift between providers (e.g. abbreviations) can cause misses.
 export function findMatchingOdds(fixture: ApiFootballFixture, oddsEvents: OddsApiEvent[]): OddsApiEvent | null {
-  const home = normalizeTeamName(fixture.teams.home.name);
-  const away = normalizeTeamName(fixture.teams.away.name);
+  const home = normalizeName(fixture.teams.home.name);
+  const away = normalizeName(fixture.teams.away.name);
   return (
-    oddsEvents.find(
-      (event) => normalizeTeamName(event.home_team) === home && normalizeTeamName(event.away_team) === away
-    ) ?? null
+    oddsEvents.find((event) => normalizeName(event.home_team) === home && normalizeName(event.away_team) === away) ??
+    null
   );
 }
 
@@ -58,12 +54,20 @@ export async function enrichFixtures(
 
   return Promise.all(
     toEnrich.map(async (fixture) => {
-      const [h2h, injuries, prediction, homeStats, awayStats] = await Promise.all([
+      // findMatchingOdds is a pure local lookup (no I/O), so it runs before
+      // the fan-out below purely to decide whether getEventOdds is needed —
+      // it does not block anything.
+      const odds = findMatchingOdds(fixture, oddsEvents);
+
+      const [h2h, injuries, prediction, homeStats, awayStats, extendedOdds] = await Promise.all([
         getH2H(fixture.teams.home.id, fixture.teams.away.id),
         getInjuries(fixture.fixture.id),
         getPrediction(fixture.fixture.id),
         getTeamStats(fixture.league.id, season, fixture.teams.home.id),
         getTeamStats(fixture.league.id, season, fixture.teams.away.id),
+        // Extended markets need the matched event's Odds API id + sport_key —
+        // skip the extra request entirely when there's no bulk-odds match.
+        odds ? getEventOdds(odds.sport_key, odds.id) : Promise.resolve(null),
       ]);
 
       return {
@@ -73,7 +77,8 @@ export async function enrichFixtures(
         prediction,
         homeStats,
         awayStats,
-        odds: findMatchingOdds(fixture, oddsEvents),
+        odds,
+        extendedOdds,
       };
     })
   );

@@ -101,6 +101,10 @@ export interface RawFixtureData {
   readonly homeStats: unknown;
   readonly awayStats: unknown;
   readonly odds: unknown;
+  // Per-event markets (btts, correct score, HT/FT, corners, cards, player
+  // props) — only fetched when the bulk-odds match succeeded, since it needs
+  // that event's Odds API id. null when no match or no extended data exists.
+  readonly extendedOdds: unknown;
 }
 
 // Stage 1 output per pick candidate.

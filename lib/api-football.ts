@@ -1,5 +1,5 @@
 import { env } from './env';
-import type { ApiFootballFixture, ApiFootballPrediction } from '@/types/api';
+import type { ApiFootballFixture, ApiFootballFixtureEvent, ApiFootballFixtureStatistics, ApiFootballPrediction } from '@/types/api';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
@@ -77,6 +77,20 @@ export async function getLineup(fixtureId: number): Promise<unknown[]> {
   return fetchFootball<unknown>('/fixtures/lineups', { fixture: fixtureId });
 }
 
+// Verified live (v3.football.api-sports.io/fixtures/statistics, fixture 1508460):
+// one entry per team. Not guaranteed populated for every finished fixture —
+// results:0 was observed for several other real fixtures with no error, so
+// callers must treat empty/missing stats as "unavailable", not a fetch failure.
+export async function getFixtureStatistics(fixtureId: number): Promise<ApiFootballFixtureStatistics[]> {
+  return fetchFootball<ApiFootballFixtureStatistics>('/fixtures/statistics', { fixture: fixtureId });
+}
+
+// Verified live (v3.football.api-sports.io/fixtures/events, fixture 1508460):
+// chronological list of Goal/Card/subst/Var events with player-level detail.
+export async function getFixtureEvents(fixtureId: number): Promise<ApiFootballFixtureEvent[]> {
+  return fetchFootball<ApiFootballFixtureEvent>('/fixtures/events', { fixture: fixtureId });
+}
+
 export async function getPrediction(fixtureId: number): Promise<ApiFootballPrediction | null> {
   const results = await fetchFootball<ApiFootballPrediction>('/predictions', { fixture: fixtureId });
   return results[0] ?? null;
@@ -91,9 +105,14 @@ export async function getTeamStats(leagueId: number, season: number, teamId: num
 // Champions League knockouts — a match decided in extra time still settles.
 const FINISHED_STATUSES = new Set(['FT', 'AET', 'PEN']);
 
-export async function getFixtureResult(
-  fixtureId: number
-): Promise<{ homeGoals: number; awayGoals: number; status: string; finished: boolean } | null> {
+export async function getFixtureResult(fixtureId: number): Promise<{
+  homeGoals: number;
+  awayGoals: number;
+  halftimeHomeGoals: number | null;
+  halftimeAwayGoals: number | null;
+  status: string;
+  finished: boolean;
+} | null> {
   const results = await fetchFootball<ApiFootballFixture>('/fixtures', { id: fixtureId });
   const fixture = results[0];
   if (!fixture) return null;
@@ -105,5 +124,12 @@ export async function getFixtureResult(
   if (homeGoals === null || awayGoals === null) return null;
 
   const status = fixture.fixture.status.short;
-  return { homeGoals, awayGoals, status, finished: FINISHED_STATUSES.has(status) };
+  return {
+    homeGoals,
+    awayGoals,
+    halftimeHomeGoals: fixture.score?.halftime.home ?? null,
+    halftimeAwayGoals: fixture.score?.halftime.away ?? null,
+    status,
+    finished: FINISHED_STATUSES.has(status),
+  };
 }

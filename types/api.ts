@@ -62,8 +62,33 @@ export interface ApiFootballFixture {
   // score.fulltime is the 90-minute score; goals includes extra time when a
   // match goes to AET, and betting markets settle on the 90-minute result.
   readonly score?: {
+    readonly halftime: { readonly home: number | null; readonly away: number | null };
     readonly fulltime: { readonly home: number | null; readonly away: number | null };
   };
+}
+
+// Verified live against fixture 1508460 (v3.football.api-sports.io/fixtures/statistics):
+// response is one entry per team, each with a flat list of {type, value} pairs.
+// `type` strings are fixed vocabulary set by API-Football, not free text.
+export interface ApiFootballFixtureStatistics {
+  readonly team: ApiFootballTeam;
+  readonly statistics: ReadonlyArray<{
+    readonly type: string;
+    readonly value: number | string | null;
+  }>;
+}
+
+// Verified live against fixture 1508460 (v3.football.api-sports.io/fixtures/events).
+// type is "Goal" | "Card" | "subst" | "Var" (per API-Football); detail narrows
+// further, e.g. "Normal Goal" | "Penalty" | "Own Goal" | "Yellow Card" | "Red Card".
+export interface ApiFootballFixtureEvent {
+  readonly time: { readonly elapsed: number; readonly extra: number | null };
+  readonly team: ApiFootballTeam;
+  readonly player: { readonly id: number | null; readonly name: string | null };
+  readonly assist: { readonly id: number | null; readonly name: string | null };
+  readonly type: string;
+  readonly detail: string;
+  readonly comments: string | null;
 }
 
 export interface ApiFootballPrediction {

@@ -8,6 +8,33 @@ const BASE_URL = 'https://api.the-odds-api.com/v4';
 const DEFAULT_MARKETS = ['h2h', 'spreads', 'totals'];
 const DEFAULT_REGIONS = 'eu,uk';
 
+// Per-event market keys, verified live against api.the-odds-api.com on 2026-07-12
+// (soccer_epl and soccer_brazil_campeonato fixtures). The API silently omits any
+// key a bookmaker doesn't offer for that match rather than erroring — and only
+// bills for markets actually returned (x-requests-last == populated markets ×
+// regions, confirmed across 4 live calls), so requesting the full list is free
+// when a market isn't offered. Live-confirmed to return real bookmaker data:
+// btts, double_chance, draw_no_bet, correct_score, halftime_fulltime,
+// alternate_totals_corners. The rest were accepted (no error) on live calls but
+// never populated for the two test fixtures used — availability for EPL/
+// Champions League/La Liga specifically is unverified beyond that.
+//
+// Deliberately excludes alternate_spreads_corners, alternate_spreads_cards, and
+// player_shots_on_target: Stage 1 is never instructed to pick from them and
+// inngest/settle-results.ts has no grading logic for them, so fetching them
+// would only spend credits on data nothing can ever act on.
+const EXTENDED_MARKETS = [
+  'btts',
+  'double_chance',
+  'draw_no_bet',
+  'correct_score',
+  'halftime_fulltime',
+  'alternate_totals_corners',
+  'alternate_totals_cards',
+  'player_goal_scorer_anytime',
+  'player_to_receive_card',
+];
+
 export const SPORT_KEYS = {
   EPL: 'soccer_epl',
   CHAMPIONS_LEAGUE: 'soccer_uefa_champs_league',
@@ -64,6 +91,18 @@ export async function getUpcomingOdds(
     { next: { revalidate: 1800 } } // cache 30 minutes — called once per pipeline run
   );
   return data ?? [];
+}
+
+// The per-event endpoint returns the same shape as one element of the bulk
+// /odds/ array (confirmed live: id/sport_key/sport_title/commence_time/
+// home_team/away_team/bookmakers, no extra wrapper).
+export async function getEventOdds(sportKey: string, eventId: string): Promise<OddsApiEvent | null> {
+  const data = await oddsApiFetch(
+    `/sports/${sportKey}/events/${eventId}/odds`,
+    { regions: DEFAULT_REGIONS, markets: EXTENDED_MARKETS.join(','), oddsFormat: 'decimal' },
+    { next: { revalidate: 1800 } }
+  );
+  return data ?? null;
 }
 
 export async function getHistoricalOdds(sportKey: string, eventId: string): Promise<OddsApiEvent | null> {
