@@ -88,18 +88,27 @@ export default function DashboardPage() {
 
           {session?.status === 'generated' && (
             <>
-              <div className="grid gap-4 md:grid-cols-3">
-                {session.tickets.map((ticket) => (
-                  <TicketCard
-                    key={ticket.id}
-                    ticket={ticket}
-                    picks={session.picks.filter((p) => ticket.pick_ids.includes(p.id))}
-                  />
-                ))}
-              </div>
+              {session.tickets.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-3">
+                  {session.tickets.map((ticket) => (
+                    <TicketCard
+                      key={ticket.id}
+                      ticket={ticket}
+                      picks={session.picks.filter((p) => ticket.pick_ids.includes(p.id))}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400">
+                  Not enough qualifying picks today for a full 3-ticket session — showing what qualified individually
+                  instead.
+                </p>
+              )}
 
               <div>
-                <h2 className="mb-3 text-lg font-semibold text-white">All picks</h2>
+                <h2 className="mb-3 text-lg font-semibold text-white">
+                  {session.tickets.length > 0 ? 'All picks' : `Today's qualifying picks (${session.picks.length})`}
+                </h2>
                 <div className="grid gap-3 md:grid-cols-2">
                   {session.picks.map((pick) => (
                     <PickCard key={pick.id} pick={pick} showStake />

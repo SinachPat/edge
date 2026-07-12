@@ -6,7 +6,10 @@ import { runStage3 } from '@/pipeline/stage3-ticket-assembly';
 import { calculateStake } from '@/lib/kelly';
 import { createServerClient } from '@/lib/supabase';
 
-const MIN_QUALIFIED_PICKS = 9;
+// 3 tickets × 3 non-repeating picks — the count Stage 3 needs to assemble a
+// full parlay session. Below this, there still might be real edge on the
+// table; only true zero qualifying picks means there's nothing to show.
+const FULL_SESSION_PICKS = 9;
 
 const LAYER_NAMES = [
   'H2H Record',
@@ -66,29 +69,36 @@ export const dailyPipeline = inngest.createFunction(
 
     const qualified = await step.run('stage1-signal-scoring', async () => runStage1(rawFixtures));
 
-    if (qualified.length < MIN_QUALIFIED_PICKS) {
+    if (qualified.length === 0) {
       await step.run('write-held-session', async () => {
         const supabase = createServerClient();
         await supabase.from('sessions').upsert(
           {
             date,
             status: 'held',
-            reason_held: `Only ${qualified.length} picks qualified (need ${MIN_QUALIFIED_PICKS})`,
-            picks_qualified: qualified.length,
+            reason_held: 'No fixtures cleared the 4-of-7 signal bar today.',
+            picks_qualified: 0,
           },
           { onConflict: 'date' }
         );
       });
-      return { held: true, reason: 'insufficient_data', picksQualified: qualified.length };
+      return { held: true, reason: 'insufficient_data', picksQualified: 0 };
     }
 
     const topCandidates = [...qualified]
       .sort((a, b) => b.signalCount - a.signalCount || (b.evScore ?? 0) - (a.evScore ?? 0))
-      .slice(0, MIN_QUALIFIED_PICKS);
+      .slice(0, FULL_SESSION_PICKS);
 
     const reasonedPicks = await step.run('stage2-reasoning', async () => runStage2(topCandidates));
 
-    const tickets = await step.run('stage3-assembly', async () => runStage3(reasonedPicks));
+    // Stage 3 assembles exactly 3 non-repeating 3-leg tickets, which needs 9
+    // distinct picks minimum — below that there's no valid way to fill the
+    // parlay structure, so skip straight to showing the individual picks
+    // instead of forcing a smaller/invalid ticket shape.
+    const tickets =
+      topCandidates.length >= FULL_SESSION_PICKS
+        ? await step.run('stage3-assembly', async () => runStage3(reasonedPicks))
+        : [];
 
     const result = await step.run('persist-to-supabase', async () => {
       const supabase = createServerClient();
