@@ -1,4 +1,4 @@
-import { callClaude, parseJsonResponse, MODEL_CONFIG } from '@/lib/anthropic';
+import { callClaude, parseJsonResponse, MODEL_CONFIG, EdgeAIError } from '@/lib/anthropic';
 import { STAGE_3_SYSTEM_PROMPT } from './prompts/stage3';
 import type { ReasonedPick, AssembledTicket, TicketType } from '@/types/edge';
 
@@ -83,7 +83,13 @@ export async function runStage3(picks: ReasonedPick[]): Promise<AssembledTicket[
     ({ tickets } = parseJsonResponse<{ tickets: RawTicket[] }>(correctionRaw));
     violation = validate(tickets, picks.length);
     if (violation) {
-      console.warn(`[stage3] validation still failing after retry: ${violation}`);
+      // Proceeding here would persist tickets that violate a hard rule (a
+      // duplicated pick double-counts that pick's stake across two tickets'
+      // total_stake; a blown odds cap or wrong pick count corrupts the
+      // parlay itself) — this is real-money data, so a still-broken
+      // assembly after one correction attempt must fail the pipeline step
+      // rather than silently write invalid tickets.
+      throw new EdgeAIError(`Stage 3 ticket validation failed after retry: ${violation}`, correctionRaw, 3, MODEL_CONFIG.STAGE_3);
     }
   }
 
