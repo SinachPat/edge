@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
+import { ChevronDown } from 'lucide-react';
 import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, format, addMonths, subMonths, isToday } from 'date-fns';
 import { useSessions } from './useSessions';
 import { useFixtures, useSports } from './useFixtures';
@@ -82,19 +83,25 @@ export default function CalendarPage() {
                 {f.label}
               </button>
             ))}
-            <select
-              value={sportKey}
-              onChange={(e) => setSportKey(e.target.value)}
-              aria-label="All sports"
-              className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] px-2 py-1 text-xs text-gray-300 focus:border-[#C8973A] focus:outline-none"
-            >
-              {!sports.some((s) => s.key === sportKey) && <option value={sportKey}>{sportKey}</option>}
-              {sports.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.group} — {s.title}
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <select
+                value={sportKey}
+                onChange={(e) => setSportKey(e.target.value)}
+                aria-label="All sports"
+                className="appearance-none rounded-lg border border-[#1A3C5E] bg-[#0F2236] py-1 pr-7 pl-2 text-xs text-gray-300 focus:border-[#C8973A] focus:outline-none"
+              >
+                {!sports.some((s) => s.key === sportKey) && <option value={sportKey}>{sportKey}</option>}
+                {sports.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.group} — {s.title}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                className="pointer-events-none absolute top-1/2 right-2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500"
+                aria-hidden
+              />
+            </div>
           </div>
         </div>
 
