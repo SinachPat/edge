@@ -8,5 +8,8 @@ export default async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  // icon/apple-icon are Next.js's code-generated favicon routes (app/icon.tsx,
+  // app/apple-icon.tsx) — browsers request these unauthenticated before any
+  // login, so they need the same exclusion favicon.ico already had.
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|icon|apple-icon).*)'],
 };
