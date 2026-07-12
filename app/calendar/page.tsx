@@ -190,6 +190,7 @@ export default function CalendarPage() {
                     'aspect-square rounded text-sm transition-colors duration-150',
                     session?.status === 'generated' && 'bg-green-900/50 text-green-300 hover:bg-green-900/70',
                     session?.status === 'held' && 'bg-amber-900/50 text-amber-300 hover:bg-amber-900/70',
+                    session?.status === 'running' && 'animate-pulse bg-[#C8973A]/20 text-[#C8973A]',
                     !session && 'text-gray-600',
                     today && 'ring-2 ring-[#C8973A]',
                     selected && 'outline outline-2 outline-white'
@@ -230,6 +231,8 @@ export default function CalendarPage() {
                 ))}
               </ul>
             </div>
+          ) : selectedSession.status === 'running' ? (
+            <p className="text-sm text-[#C8973A]">Session in progress — check back in a minute.</p>
           ) : (
             <p className="text-sm text-gray-400">{selectedSession.reason_held}</p>
           )}

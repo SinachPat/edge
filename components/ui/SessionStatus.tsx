@@ -15,6 +15,12 @@ const STATUS_CONFIG = {
     dot: 'bg-amber-400',
     pulse: false,
   },
+  running: {
+    label: 'Session running...',
+    className: 'bg-[#C8973A]/10 text-[#C8973A] border-[#C8973A]/40',
+    dot: 'bg-[#C8973A]',
+    pulse: true,
+  },
   none: {
     label: 'Awaiting next session',
     className: 'bg-gray-800/60 text-gray-400 border-gray-600/40',
@@ -23,7 +29,7 @@ const STATUS_CONFIG = {
   },
 } as const;
 
-export function SessionStatus({ status }: { status: 'generated' | 'held' | null }) {
+export function SessionStatus({ status }: { status: 'generated' | 'held' | 'running' | null }) {
   const config = STATUS_CONFIG[status ?? 'none'];
 
   return (

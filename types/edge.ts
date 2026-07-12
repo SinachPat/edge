@@ -5,7 +5,7 @@ export type PickStatus = 'pending' | 'won' | 'lost' | 'void';
 export type ConfidenceTier = 'DIAMOND' | 'GOLD' | 'SILVER';
 export type TicketType = 'anchor' | 'value' | 'diversified';
 export type SignalResult = 'pass' | 'fail';
-export type SessionStatus = 'generated' | 'held';
+export type SessionStatus = 'generated' | 'held' | 'running';
 
 // ============================================================================
 // Database entities — mirror supabase/migrations/001_initial_schema.sql exactly

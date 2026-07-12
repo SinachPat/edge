@@ -22,18 +22,46 @@ function todayISODate(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-export const dailyPipeline = inngest.createFunction(
-  { id: 'daily-prediction-pipeline', triggers: [{ cron: '0 6 * * *' }] }, // 06:00 UTC daily
-  async ({ step }) => {
-    const date = todayISODate();
+export const ALL_PIPELINE_SPORTS = ['soccer', 'basketball', 'baseball', 'american-football'] as const;
+export type PipelineSport = (typeof ALL_PIPELINE_SPORTS)[number];
 
-    const fixtures = await step.run('fetch-fixtures', async () => fetchFixturesForDate(date));
-    const oddsEvents = await step.run('fetch-odds', async () => fetchAllSoccerOdds());
-    const soccerFixtures = await step.run('enrich-fixtures', async () => enrichFixtures(fixtures, oddsEvents));
+// Fired by the "Run Session" button (server/routers/sessions.ts) for an
+// on-demand run any time of day, alongside the existing 06:00 UTC cron.
+// Verified against the installed SDK's trigger schema that a mixed
+// cron+event triggers array is supported (node_modules/inngest/types.d.ts).
+export const RUN_SESSION_EVENT = 'session/run.requested';
+
+export const dailyPipeline = inngest.createFunction(
+  { id: 'daily-prediction-pipeline', triggers: [{ cron: '0 6 * * *' }, { event: RUN_SESSION_EVENT }] },
+  async ({ event, step }) => {
+    const date = todayISODate();
+    // Cron-triggered runs carry no custom data — default to every sport.
+    // Manually-triggered runs specify which sports to include.
+    const requestedSports: readonly PipelineSport[] =
+      event?.name === RUN_SESSION_EVENT && Array.isArray(event.data?.sports) ? event.data.sports : ALL_PIPELINE_SPORTS;
+
+    // Written first (upsert, not insert — sessions.date is UNIQUE, and a
+    // manual run can start on a day the cron already touched) so the
+    // dashboard shows the run is actually in progress rather than looking
+    // identical to "no session yet" for the couple of minutes this takes.
+    await step.run('mark-running', async () => {
+      const supabase = createServerClient();
+      await supabase.from('sessions').upsert({ date, status: 'running' }, { onConflict: 'date' });
+    });
+
+    const includeSoccer = requestedSports.includes('soccer');
+    const soccerFixtures = includeSoccer
+      ? await step.run('enrich-fixtures', async () => {
+          const [fixtures, oddsEvents] = await Promise.all([fetchFixturesForDate(date), fetchAllSoccerOdds()]);
+          return enrichFixtures(fixtures, oddsEvents);
+        })
+      : [];
     // NBA/MLB/NFL — fixtures + H2H from API-Sports, odds from The Odds API.
     // Failures inside are per-sport (logged and skipped), so an off-season or
     // erroring sport never blocks the others or the soccer path.
-    const usFixtures = await step.run('fetch-us-sports', async () => fetchUsSportsFixtures(date));
+    const usSports = requestedSports.filter((s): s is Exclude<PipelineSport, 'soccer'> => s !== 'soccer');
+    const usFixtures =
+      usSports.length > 0 ? await step.run('fetch-us-sports', async () => fetchUsSportsFixtures(date, usSports)) : [];
     const rawFixtures = [...soccerFixtures, ...usFixtures];
 
     const qualified = await step.run('stage1-signal-scoring', async () => runStage1(rawFixtures));
@@ -41,12 +69,15 @@ export const dailyPipeline = inngest.createFunction(
     if (qualified.length < MIN_QUALIFIED_PICKS) {
       await step.run('write-held-session', async () => {
         const supabase = createServerClient();
-        await supabase.from('sessions').insert({
-          date,
-          status: 'held',
-          reason_held: `Only ${qualified.length} picks qualified (need ${MIN_QUALIFIED_PICKS})`,
-          picks_qualified: qualified.length,
-        });
+        await supabase.from('sessions').upsert(
+          {
+            date,
+            status: 'held',
+            reason_held: `Only ${qualified.length} picks qualified (need ${MIN_QUALIFIED_PICKS})`,
+            picks_qualified: qualified.length,
+          },
+          { onConflict: 'date' }
+        );
       });
       return { held: true, reason: 'insufficient_data', picksQualified: qualified.length };
     }
@@ -75,12 +106,15 @@ export const dailyPipeline = inngest.createFunction(
 
       const { data: session, error: sessionError } = await supabase
         .from('sessions')
-        .insert({
-          date,
-          status: 'generated',
-          picks_qualified: qualified.length,
-          tickets_generated: tickets.length,
-        })
+        .upsert(
+          {
+            date,
+            status: 'generated',
+            picks_qualified: qualified.length,
+            tickets_generated: tickets.length,
+          },
+          { onConflict: 'date' }
+        )
         .select()
         .single();
       if (sessionError || !session) {

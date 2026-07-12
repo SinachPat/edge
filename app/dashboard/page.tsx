@@ -6,6 +6,7 @@ import { SessionStatus } from '@/components/ui/SessionStatus';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { TicketCard } from '@/components/picks/TicketCard';
 import { PickCard } from '@/components/picks/PickCard';
+import { RunSessionForm } from '@/components/dashboard/RunSessionForm';
 
 function DashboardSkeleton() {
   return (
@@ -33,7 +34,11 @@ function nextScheduledRun(): Date {
 }
 
 export default function DashboardPage() {
-  const { data: session, isLoading } = trpc.picks.getToday.useQuery();
+  // While a manually-triggered session is running, poll so the page picks up
+  // 'held'/'generated' as soon as the pipeline finishes — no manual refresh.
+  const { data: session, isLoading } = trpc.picks.getToday.useQuery(undefined, {
+    refetchInterval: (query) => (query.state.data?.status === 'running' ? 3000 : false),
+  });
   const today = format(new Date(), 'EEEE, MMMM d, yyyy');
 
   return (
@@ -47,25 +52,38 @@ export default function DashboardPage() {
         <DashboardSkeleton />
       ) : (
         <div className="space-y-6">
-          <SessionStatus status={session ? (session.status as 'generated' | 'held') : null} />
+          <SessionStatus status={session?.status ?? null} />
 
           {!session && (
-            <EmptyState icon="⬡" title="No session yet today">
-              <p>
-                EDGE only picks when the data justifies it — analysis runs automatically at{' '}
-                <span className="text-gray-300">06:00 UTC</span>, next at{' '}
-                <span className="text-gray-300">{format(nextScheduledRun(), "h:mm a 'on' EEEE")}</span> your time.
-              </p>
+            <>
+              <EmptyState icon="⬡" title="No session yet today">
+                <p>
+                  EDGE only picks when the data justifies it — analysis runs automatically at{' '}
+                  <span className="text-gray-300">06:00 UTC</span>, next at{' '}
+                  <span className="text-gray-300">{format(nextScheduledRun(), "h:mm a 'on' EEEE")}</span> your time.
+                  Or run one now with whatever fixtures are available today.
+                </p>
+              </EmptyState>
+              <RunSessionForm />
+            </>
+          )}
+
+          {session?.status === 'running' && (
+            <EmptyState icon="⟳" title="Session running">
+              <p>Fetching fixtures, scoring signals, and reasoning through picks — this takes a couple of minutes.</p>
             </EmptyState>
           )}
 
           {session?.status === 'held' && (
-            <EmptyState icon="⏸" title="Holding — insufficient data">
-              <p>
-                {session.reason_held ??
-                  "Today's fixtures didn't clear the 4-of-7 signal bar. No picks means no forced bets — that's the discipline working, not a failure."}
-              </p>
-            </EmptyState>
+            <>
+              <EmptyState icon="⏸" title="Holding — insufficient data">
+                <p>
+                  {session.reason_held ??
+                    "Today's fixtures didn't clear the 4-of-7 signal bar. No picks means no forced bets — that's the discipline working, not a failure."}
+                </p>
+              </EmptyState>
+              <RunSessionForm />
+            </>
           )}
 
           {session?.status === 'generated' && (

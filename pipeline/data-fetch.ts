@@ -126,9 +126,14 @@ const TRACKED_US_SPORTS = [
 // quota: 1 games-by-date call + at most this many H2H calls per day.
 const MAX_GAMES_PER_US_SPORT = 8;
 
-export async function fetchUsSportsFixtures(date: string): Promise<RawFixtureData[]> {
+export async function fetchUsSportsFixtures(
+  date: string,
+  sports?: readonly (typeof TRACKED_US_SPORTS)[number]['sport'][]
+): Promise<RawFixtureData[]> {
+  const tracked = sports ? TRACKED_US_SPORTS.filter((s) => sports.includes(s.sport)) : TRACKED_US_SPORTS;
+
   const perSport = await Promise.all(
-    TRACKED_US_SPORTS.map(async ({ sport, league, product, leagueId, oddsSportKey }) => {
+    tracked.map(async ({ sport, league, product, leagueId, oddsSportKey }) => {
       // A sport out of season (or a temporarily failing product) shouldn't
       // sink the whole pipeline — log and continue with the other sports.
       let games: ApiSportsGame[];
