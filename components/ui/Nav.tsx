@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Zap, Clock, TrendingUp, CalendarDays, LogOut } from 'lucide-react';
+import { Zap, Clock, TrendingUp, CalendarDays, LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 import { trpc } from '@/lib/trpc-client';
 import { createBrowserClient } from '@/lib/supabase-browser';
@@ -14,7 +14,7 @@ const LINKS = [
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
 ];
 
-export function Nav() {
+export function Nav({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggleCollapsed: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { data: bankroll } = trpc.bankroll.getCurrent.useQuery();
@@ -30,37 +30,69 @@ export function Nav() {
   return (
     <>
       {/* Desktop sidebar */}
-      <nav className="fixed inset-y-0 left-0 hidden w-60 flex-col justify-between border-r border-[#1A3C5E] bg-[#0A1829] md:flex">
+      <nav
+        className={clsx(
+          'fixed inset-y-0 left-0 hidden flex-col justify-between border-r border-[#1A3C5E] bg-[#0A1829] transition-[width] duration-200 md:flex',
+          collapsed ? 'w-16' : 'w-60'
+        )}
+      >
         <div>
-          <div className="flex items-center gap-2 px-6 py-5">
-            <span className="text-xl text-[#C8973A]" aria-hidden>
-              ⬡
-            </span>
-            <span className="text-lg font-bold text-[#C8973A]">EDGE</span>
+          <div className={clsx('flex items-center py-5', collapsed ? 'justify-center px-2' : 'justify-between px-6')}>
+            <div className="flex items-center gap-2">
+              <span className="text-xl text-[#C8973A]" aria-hidden>
+                ⬡
+              </span>
+              {!collapsed && <span className="text-lg font-bold text-[#C8973A]">EDGE</span>}
+            </div>
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                aria-label="Collapse sidebar"
+                className="text-gray-500 transition-colors duration-150 hover:text-white"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            )}
           </div>
 
-          <div className="flex flex-col gap-1 px-3">
+          {collapsed && (
+            <div className="flex justify-center px-2 pb-3">
+              <button
+                type="button"
+                onClick={onToggleCollapsed}
+                aria-label="Expand sidebar"
+                className="text-gray-500 transition-colors duration-150 hover:text-white"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            </div>
+          )}
+
+          <div className={clsx('flex flex-col gap-1', collapsed ? 'px-2' : 'px-3')}>
             {LINKS.map(({ href, label, icon: Icon }) => {
               const active = pathname === href;
               return (
                 <Link
                   key={href}
                   href={href}
+                  title={collapsed ? label : undefined}
                   className={clsx(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150',
+                    'flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-colors duration-150',
+                    collapsed ? 'justify-center px-0' : 'px-3',
                     active ? 'bg-[#1A3C5E] text-[#C8973A]' : 'text-gray-400 hover:bg-[#0F2236] hover:text-white'
                   )}
                 >
                   <Icon size={18} />
-                  {label}
+                  {!collapsed && label}
                 </Link>
               );
             })}
           </div>
         </div>
 
-        <div className="border-t border-[#1A3C5E] px-6 py-4">
-          {balance !== undefined && (
+        <div className={clsx('border-t border-[#1A3C5E] py-4', collapsed ? 'px-2' : 'px-6')}>
+          {balance !== undefined && !collapsed && (
             <>
               <p className="text-xs text-gray-500">Bankroll</p>
               <p className="mb-3 text-sm font-semibold text-white">₦{balance.toLocaleString()}</p>
@@ -69,10 +101,14 @@ export function Nav() {
           <button
             type="button"
             onClick={handleSignOut}
-            className="flex items-center gap-2 text-xs text-gray-500 transition-colors duration-150 hover:text-white"
+            title={collapsed ? 'Sign out' : undefined}
+            className={clsx(
+              'flex items-center gap-2 text-xs text-gray-500 transition-colors duration-150 hover:text-white',
+              collapsed && 'justify-center'
+            )}
           >
             <LogOut size={14} />
-            Sign out
+            {!collapsed && 'Sign out'}
           </button>
         </div>
       </nav>
