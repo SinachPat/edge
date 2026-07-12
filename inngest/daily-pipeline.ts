@@ -1,5 +1,5 @@
 import { inngest } from './client';
-import { fetchFixturesForDate, fetchOddsForTrackedLeagues, enrichFixtures } from '@/pipeline/data-fetch';
+import { fetchFixturesForDate, fetchAllSoccerOdds, enrichFixtures, fetchUsSportsFixtures } from '@/pipeline/data-fetch';
 import { runStage1 } from '@/pipeline/stage1-signal-scoring';
 import { runStage2 } from '@/pipeline/stage2-pick-reasoning';
 import { runStage3 } from '@/pipeline/stage3-ticket-assembly';
@@ -28,8 +28,13 @@ export const dailyPipeline = inngest.createFunction(
     const date = todayISODate();
 
     const fixtures = await step.run('fetch-fixtures', async () => fetchFixturesForDate(date));
-    const oddsEvents = await step.run('fetch-odds', async () => fetchOddsForTrackedLeagues());
-    const rawFixtures = await step.run('enrich-fixtures', async () => enrichFixtures(fixtures, oddsEvents));
+    const oddsEvents = await step.run('fetch-odds', async () => fetchAllSoccerOdds());
+    const soccerFixtures = await step.run('enrich-fixtures', async () => enrichFixtures(fixtures, oddsEvents));
+    // NBA/MLB/NFL — fixtures + H2H from API-Sports, odds from The Odds API.
+    // Failures inside are per-sport (logged and skipped), so an off-season or
+    // erroring sport never blocks the others or the soccer path.
+    const usFixtures = await step.run('fetch-us-sports', async () => fetchUsSportsFixtures(date));
+    const rawFixtures = [...soccerFixtures, ...usFixtures];
 
     const qualified = await step.run('stage1-signal-scoring', async () => runStage1(rawFixtures));
 
@@ -122,6 +127,8 @@ export const dailyPipeline = inngest.createFunction(
             home_team: pick.homeTeam,
             away_team: pick.awayTeam,
             fixture_id: pick.fixtureId,
+            odds_event_id: pick.oddsEventId ?? null,
+            odds_sport_key: pick.oddsSportKey ?? null,
             match_date: pick.matchDate,
             market_type: pick.marketType,
             selection: pick.selection,

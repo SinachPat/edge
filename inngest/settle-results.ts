@@ -1,10 +1,11 @@
 import { inngest } from './client';
 import { getFixtureEvents, getFixtureResult, getFixtureStatistics } from '@/lib/api-football';
+import { getScores } from '@/lib/odds-api';
 import { getClosingLineValue } from '@/lib/sharpapi';
 import { createServerClient } from '@/lib/supabase';
 import { normalizeName } from '@/lib/normalize';
 import type { Pick } from '@/types/edge';
-import type { ApiFootballFixtureEvent, ApiFootballFixtureStatistics } from '@/types/api';
+import type { ApiFootballFixtureEvent, ApiFootballFixtureStatistics, OddsApiScoreEvent } from '@/types/api';
 
 export type SettlementResult = 'won' | 'lost' | 'void';
 
@@ -251,11 +252,78 @@ export function evaluatePickResult(
   }
 }
 
-async function getCached<T>(cache: Map<number, T>, key: number, fetch: () => Promise<T>): Promise<T> {
+async function getCached<K, T>(cache: Map<K, T>, key: K, fetch: () => Promise<T>): Promise<T> {
   if (cache.has(key)) return cache.get(key) as T;
   const value = await fetch();
   cache.set(key, value);
   return value;
+}
+
+// ============================================================================
+// US sports settlement (basketball / baseball / american football)
+// ============================================================================
+
+// Grades 2-way US-sport markets off a final score. Market vocabulary comes
+// from the Stage 1 prompt: Moneyline (team name), Spread ('Spread -5.5 Team'),
+// Total ('Total Over 224.5'). Branch order matters: 'spread' and over/under
+// are checked before the team-name moneyline fallback, since a spread
+// selection also contains a team name.
+export function evaluateUsPickResult(
+  pick: {
+    market_type: Pick['market_type'];
+    selection: Pick['selection'];
+    home_team: Pick['home_team'];
+    away_team: Pick['away_team'];
+  },
+  homeScore: number,
+  awayScore: number
+): SettlementResult {
+  const market = `${pick.market_type} ${pick.selection}`.toLowerCase();
+  const selectionKey = normalizeName(pick.selection);
+  const homeKey = normalizeName(pick.home_team);
+  const awayKey = normalizeName(pick.away_team);
+  // Team identification by substring against the normalized selection. Note:
+  // the check runs home-then-away, so a selection matching neither voids.
+  const pickedHome = selectionKey.includes(homeKey);
+  const pickedAway = !pickedHome && selectionKey.includes(awayKey);
+
+  if (market.includes('spread') || market.includes('handicap')) {
+    // The line must be explicitly signed (+/-) — team names like '76ers' or
+    // '49ers' contain digits, so an unsigned-number regex would misparse them.
+    const line = market.match(/([+-]\d+(?:\.\d+)?)/);
+    if (!line || (!pickedHome && !pickedAway)) return 'void';
+    const handicap = Number(line[1]);
+    const adjusted = pickedHome ? homeScore + handicap : awayScore + handicap;
+    const opponent = pickedHome ? awayScore : homeScore;
+    if (adjusted === opponent) return 'void'; // push on whole-number lines
+    return adjusted > opponent ? 'won' : 'lost';
+  }
+
+  if (market.includes('total') || /(over|under)\s*\d/.test(market)) {
+    return gradeOverUnder(homeScore + awayScore, market);
+  }
+
+  // Moneyline: the picked team must win outright. Ties (possible in the NFL)
+  // push on 2-way moneylines.
+  if (pickedHome || pickedAway) {
+    if (homeScore === awayScore) return 'void';
+    const homeWon = homeScore > awayScore;
+    return (pickedHome && homeWon) || (pickedAway && !homeWon) ? 'won' : 'lost';
+  }
+
+  return 'void';
+}
+
+// The Odds API /scores daysFrom is capped at 3 — completed games older than
+// that are no longer resolvable through this endpoint.
+const SCORES_LOOKBACK_DAYS = 3;
+
+function scoreValue(event: OddsApiScoreEvent, team: string): number | null {
+  const teamKey = normalizeName(team);
+  const entry = event.scores?.find((s) => normalizeName(s.name) === teamKey);
+  if (!entry) return null;
+  const value = Number(entry.score);
+  return Number.isFinite(value) ? value : null;
 }
 
 // Fetches statistics/events only when the pick's market actually needs them
@@ -317,8 +385,59 @@ export const settleResults = inngest.createFunction(
       const fixtureResultCache = new Map<number, Awaited<ReturnType<typeof getFixtureResult>>>();
       const statsCache = new Map<number, ApiFootballFixtureStatistics[]>();
       const eventsCache = new Map<number, ApiFootballFixtureEvent[]>();
+      // One /scores call per sport per run (2 credits each), shared by every
+      // pick in that sport.
+      const scoresBySport = new Map<string, OddsApiScoreEvent[]>();
+
+      async function settle(pick: Pick, outcome: SettlementResult, homeScore: number | null, awayScore: number | null) {
+        await supabase
+          .from('picks')
+          .update({
+            status: outcome,
+            settled_at: new Date().toISOString(),
+            final_home_goals: homeScore,
+            final_away_goals: awayScore,
+          })
+          .eq('id', pick.id);
+        settled.push(pick.id);
+      }
 
       for (const pick of pending) {
+        // Non-soccer sports settle via The Odds API /scores using the event
+        // reference stored at pick time. Soccer keeps the API-Football path,
+        // which can also grade exotic markets (corners, cards, player props).
+        const isUsSport = Boolean(pick.odds_sport_key && !pick.odds_sport_key.startsWith('soccer'));
+
+        if (isUsSport) {
+          if (!pick.odds_event_id) {
+            // No settlement reference was stored — permanently unresolvable.
+            await settle(pick, 'void', null, null);
+            continue;
+          }
+          const sportKey = pick.odds_sport_key as string;
+          const events = await getCached(scoresBySport, sportKey, () => getScores(sportKey, SCORES_LOOKBACK_DAYS));
+          const event = events.find((ev) => ev.id === pick.odds_event_id);
+
+          if (!event || !event.completed) {
+            // /scores only reaches back SCORES_LOOKBACK_DAYS — a pick whose
+            // game finished before that window opened can never resolve here.
+            const expired = new Date(pick.match_date).getTime() < Date.now() - SCORES_LOOKBACK_DAYS * 86400000;
+            if (expired) await settle(pick, 'void', null, null);
+            continue; // otherwise: not finished yet, retry next run
+          }
+
+          const homeScore = scoreValue(event, pick.home_team);
+          const awayScore = scoreValue(event, pick.away_team);
+          if (homeScore === null || awayScore === null) {
+            await settle(pick, 'void', null, null);
+            continue;
+          }
+
+          const outcome = evaluateUsPickResult(pick, homeScore, awayScore);
+          await settle(pick, outcome, homeScore, awayScore);
+          continue;
+        }
+
         if (!pick.fixture_id) continue;
         const fixtureId = Number(pick.fixture_id);
         const fixtureResult = await getCached(fixtureResultCache, fixtureId, () => getFixtureResult(fixtureId));
@@ -326,16 +445,7 @@ export const settleResults = inngest.createFunction(
 
         const settlementData = await buildSettlementData(pick, fixtureResult, statsCache, eventsCache);
         const outcome = evaluatePickResult(pick, settlementData);
-        await supabase
-          .from('picks')
-          .update({
-            status: outcome,
-            settled_at: new Date().toISOString(),
-            final_home_goals: fixtureResult.homeGoals,
-            final_away_goals: fixtureResult.awayGoals,
-          })
-          .eq('id', pick.id);
-        settled.push(pick.id);
+        await settle(pick, outcome, fixtureResult.homeGoals, fixtureResult.awayGoals);
       }
 
       return settled;

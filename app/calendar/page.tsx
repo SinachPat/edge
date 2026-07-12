@@ -2,33 +2,43 @@
 
 import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
-import {
-  startOfMonth,
-  endOfMonth,
-  eachDayOfInterval,
-  getDay,
-  format,
-  addMonths,
-  subMonths,
-  addDays,
-  subDays,
-  isToday,
-} from 'date-fns';
+import { startOfMonth, endOfMonth, eachDayOfInterval, getDay, format, addMonths, subMonths, isToday } from 'date-fns';
 import { useSessions } from './useSessions';
-import { useFixtures } from './useFixtures';
+import { useFixtures, useSports } from './useFixtures';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { TierBadge } from '@/components/picks/TierBadge';
 import type { FixtureSummary } from '@/server/routers/fixtures';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Quick-access chips, shown only when that sport is currently in season
+// (present in the live catalog). Everything else is reachable via the
+// full dropdown.
+const FEATURED_SPORTS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'soccer_epl', label: 'EPL' },
+  { key: 'soccer_uefa_champs_league', label: 'UCL' },
+  { key: 'soccer_spain_la_liga', label: 'La Liga' },
+  { key: 'americanfootball_nfl', label: 'NFL' },
+  { key: 'basketball_nba', label: 'NBA' },
+  { key: 'baseball_mlb', label: 'MLB' },
+  { key: 'icehockey_nhl', label: 'NHL' },
+];
+
 export default function CalendarPage() {
   const { byDate, isLoading } = useSessions();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const [fixtureDate, setFixtureDate] = useState(() => new Date());
-  const { fixtures, error: fixturesError, isLoading: fixturesLoading } = useFixtures(fixtureDate);
+  const { sports } = useSports();
+  const [sportKey, setSportKey] = useState('soccer_epl');
+  const { fixtures, error: fixturesError, isLoading: fixturesLoading } = useFixtures(sportKey);
+
+  const featuredAvailable = useMemo(() => {
+    const activeKeys = new Set(sports.map((s) => s.key));
+    return FEATURED_SPORTS.filter((f) => activeKeys.has(f.key));
+  }, [sports]);
+
+  const selectedSportTitle = sports.find((s) => s.key === sportKey)?.title ?? sportKey;
 
   const allSessions = useMemo(() => Array.from(byDate.values()), [byDate]);
   const hasAnySessions = allSessions.length > 0;
@@ -56,52 +66,53 @@ export default function CalendarPage() {
       <h1 className="mb-6 text-2xl font-bold text-white">Session Calendar</h1>
 
       <section className="mb-8">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-white">Fixtures</h2>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setFixtureDate((d) => subDays(d, 1))}
-              className="rounded px-2 py-1 text-gray-400 transition-colors hover:text-white"
-              aria-label="Previous day"
+          <div className="flex flex-wrap items-center gap-2">
+            {featuredAvailable.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setSportKey(f.key)}
+                className={clsx(
+                  'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  sportKey === f.key ? 'bg-[#C8973A]/20 text-[#C8973A]' : 'text-gray-500 hover:text-white'
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+            <select
+              value={sportKey}
+              onChange={(e) => setSportKey(e.target.value)}
+              aria-label="All sports"
+              className="rounded-lg border border-[#1A3C5E] bg-[#0F2236] px-2 py-1 text-xs text-gray-300 focus:border-[#C8973A] focus:outline-none"
             >
-              ‹
-            </button>
-            <button
-              type="button"
-              onClick={() => setFixtureDate(new Date())}
-              className={clsx(
-                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                isToday(fixtureDate) ? 'bg-[#C8973A]/20 text-[#C8973A]' : 'text-gray-500 hover:text-white'
-              )}
-            >
-              {isToday(fixtureDate) ? 'Today' : format(fixtureDate, 'EEE, MMM d')}
-            </button>
-            <button
-              type="button"
-              onClick={() => setFixtureDate((d) => addDays(d, 1))}
-              className="rounded px-2 py-1 text-gray-400 transition-colors hover:text-white"
-              aria-label="Next day"
-            >
-              ›
-            </button>
+              {!sports.some((s) => s.key === sportKey) && <option value={sportKey}>{sportKey}</option>}
+              {sports.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.group} — {s.title}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         {fixturesLoading ? (
           <div className="h-40 animate-pulse rounded-2xl bg-[#0F2236]" />
         ) : fixturesError ? (
-          <EmptyState icon="⚠" title="Fixtures unavailable for this date">
+          <EmptyState icon="⚠" title="Fixtures unavailable">
             {fixturesError}
           </EmptyState>
         ) : fixtures.length === 0 ? (
-          <EmptyState icon="⬡" title="No tracked fixtures">
-            No EPL, Champions League, or La Liga matches on {format(fixtureDate, 'EEEE, MMMM d')}.
+          <EmptyState icon="⬡" title="No games right now">
+            {selectedSportTitle} has no live, upcoming, or recent games in the bookmakers&apos; window — likely off-season
+            or between rounds.
           </EmptyState>
         ) : (
           <div className="space-y-2">
             {fixtures.map((fixture) => (
-              <FixtureRow key={fixture.fixtureId} fixture={fixture} />
+              <FixtureRow key={fixture.eventId} fixture={fixture} />
             ))}
           </div>
         )}
@@ -231,29 +242,33 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 function FixtureRow({ fixture }: { fixture: FixtureSummary }) {
-  const hasScore = fixture.homeGoals !== null && fixture.awayGoals !== null;
+  const hasScore = fixture.homeScore !== null && fixture.awayScore !== null;
 
   return (
     <div className="rounded-xl border border-[#1A3C5E] bg-[#0F2236] p-4">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-gray-500">{fixture.league}</p>
           <p className="truncate text-sm font-medium text-white">
             {fixture.homeTeam} <span className="text-gray-500">vs</span> {fixture.awayTeam}
           </p>
+          <p className="text-xs text-gray-500">{format(new Date(fixture.kickoff), 'EEE, MMM d · h:mm a')}</p>
         </div>
 
         <div className="shrink-0 text-right">
           {hasScore ? (
             <p className="font-mono text-lg font-bold text-white">
-              {fixture.homeGoals} – {fixture.awayGoals}
+              {fixture.homeScore} – {fixture.awayScore}
             </p>
           ) : (
             <p className="font-mono text-sm text-gray-300">{format(new Date(fixture.kickoff), 'h:mm a')}</p>
           )}
-          <p className="text-xs text-gray-500">
-            {fixture.statusLong}
-            {fixture.elapsed !== null && ` · ${fixture.elapsed}'`}
+          <p
+            className={clsx(
+              'text-xs',
+              fixture.live ? 'font-semibold text-green-400' : fixture.completed ? 'text-gray-500' : 'text-gray-400'
+            )}
+          >
+            {fixture.live ? '● Live' : fixture.completed ? 'Final' : 'Upcoming'}
           </p>
         </div>
       </div>

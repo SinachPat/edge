@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
-import { fetchFixturesForDate } from '@/pipeline/data-fetch';
+import { getScores, getSupportedSports } from '@/lib/odds-api';
+import { normalizeName } from '@/lib/normalize';
 import { createServerClient } from '@/lib/supabase';
 import type { ConfidenceTier, PickStatus } from '@/types/edge';
 
@@ -12,52 +13,69 @@ export interface FixturePickSummary {
   readonly status: PickStatus;
 }
 
+export interface SportOption {
+  readonly key: string;
+  readonly group: string;
+  readonly title: string;
+}
+
 export interface FixtureSummary {
-  readonly fixtureId: number;
+  readonly eventId: string;
   readonly kickoff: string;
-  readonly statusShort: string;
-  readonly statusLong: string;
-  readonly elapsed: number | null;
-  readonly league: string;
   readonly homeTeam: string;
   readonly awayTeam: string;
-  readonly homeLogo: string;
-  readonly awayLogo: string;
-  readonly homeGoals: number | null;
-  readonly awayGoals: number | null;
+  readonly homeScore: string | null;
+  readonly awayScore: string | null;
+  readonly completed: boolean;
+  readonly live: boolean;
   readonly picks: FixturePickSummary[];
 }
 
+function scoreFor(scores: ReadonlyArray<{ name: string; score: string }> | null | undefined, team: string): string | null {
+  if (!scores) return null;
+  const teamKey = normalizeName(team);
+  return scores.find((s) => normalizeName(s.name) === teamKey)?.score ?? null;
+}
+
 export const fixturesRouter = router({
-  // Browses the live API-Football fixture list for a single date across the
-  // leagues EDGE tracks (EPL, Champions League, La Liga) — independent of
-  // whether EDGE generated a pick for any of them. Free-tier API-Football
-  // keys only allow a narrow date window around the real current date; an
-  // out-of-range date fails the underlying call, so this reports that as
-  // `error` instead of throwing, letting the UI show a clear message.
-  getByDate: protectedProcedure
-    .input(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD') }))
+  // Sport catalog for the picker. The /sports call is free and cached 1h in
+  // lib/odds-api.ts. Outright/futures markets (e.g. "World Cup Winner") have
+  // no home/away fixture structure, so they're excluded.
+  getSports: protectedProcedure.query(async (): Promise<SportOption[]> => {
+    const sports = await getSupportedSports();
+    return sports
+      .filter((s) => s.active && !s.has_outrights)
+      .map(({ key, group, title }) => ({ key, group, title }))
+      .sort((a, b) => a.group.localeCompare(b.group) || a.title.localeCompare(b.title));
+  }),
+
+  // Live + upcoming + recently completed games for one sport, with EDGE's
+  // picks overlaid. Data source is The Odds API /scores (2 credits, cached
+  // 30 min server-side) — deliberately NOT API-Football, whose free tier
+  // can't do league-filtered current-season queries. Picks are matched by
+  // normalized team names on the same UTC date, which works for every sport
+  // and for existing soccer picks that only carry an API-Football fixture id.
+  getBySport: protectedProcedure
+    .input(z.object({ sportKey: z.string().regex(/^[a-z0-9_]+$/, 'Invalid sport key') }))
     .query(async ({ input }): Promise<{ fixtures: FixtureSummary[]; error: string | null }> => {
-      let fixtures;
+      let events;
       try {
-        fixtures = await fetchFixturesForDate(input.date);
+        events = await getScores(input.sportKey);
       } catch (err) {
         return { fixtures: [], error: err instanceof Error ? err.message : String(err) };
       }
 
-      const fixtureIds = fixtures.map((f) => String(f.fixture.id));
       const supabase = createServerClient();
-      const { data: picks } = fixtureIds.length
-        ? await supabase
-            .from('picks')
-            .select('id, fixture_id, market_type, selection, confidence_tier, status')
-            .in('fixture_id', fixtureIds)
-        : { data: [] };
+      const windowStart = new Date(Date.now() - 4 * 86400000).toISOString();
+      const { data: picks } = await supabase
+        .from('picks')
+        .select('id, home_team, away_team, match_date, market_type, selection, confidence_tier, status')
+        .gte('match_date', windowStart);
 
-      const picksByFixture = new Map<string, FixturePickSummary[]>();
+      const picksByMatch = new Map<string, FixturePickSummary[]>();
       for (const pick of picks ?? []) {
-        if (!pick.fixture_id) continue;
-        const list = picksByFixture.get(pick.fixture_id) ?? [];
+        const key = `${normalizeName(pick.home_team)}|${normalizeName(pick.away_team)}|${pick.match_date.slice(0, 10)}`;
+        const list = picksByMatch.get(key) ?? [];
         list.push({
           id: pick.id,
           marketType: pick.market_type,
@@ -65,27 +83,33 @@ export const fixturesRouter = router({
           confidenceTier: pick.confidence_tier,
           status: pick.status,
         });
-        picksByFixture.set(pick.fixture_id, list);
+        picksByMatch.set(key, list);
       }
 
-      const summaries: FixtureSummary[] = fixtures
-        .map((f) => ({
-          fixtureId: f.fixture.id,
-          kickoff: f.fixture.date,
-          statusShort: f.fixture.status.short,
-          statusLong: f.fixture.status.long,
-          elapsed: f.fixture.status.elapsed,
-          league: f.league.name,
-          homeTeam: f.teams.home.name,
-          awayTeam: f.teams.away.name,
-          homeLogo: f.teams.home.logo,
-          awayLogo: f.teams.away.logo,
-          homeGoals: f.score?.fulltime.home ?? f.goals.home,
-          awayGoals: f.score?.fulltime.away ?? f.goals.away,
-          picks: picksByFixture.get(String(f.fixture.id)) ?? [],
-        }))
-        .sort((a, b) => a.kickoff.localeCompare(b.kickoff));
+      const now = Date.now();
+      const fixtures: FixtureSummary[] = events
+        .map((ev) => {
+          const completed = ev.completed ?? false;
+          const matchKey = `${normalizeName(ev.home_team)}|${normalizeName(ev.away_team)}|${ev.commence_time.slice(0, 10)}`;
+          return {
+            eventId: ev.id,
+            kickoff: ev.commence_time,
+            homeTeam: ev.home_team,
+            awayTeam: ev.away_team,
+            homeScore: scoreFor(ev.scores, ev.home_team),
+            awayScore: scoreFor(ev.scores, ev.away_team),
+            completed,
+            live: !completed && new Date(ev.commence_time).getTime() <= now,
+            picks: picksByMatch.get(matchKey) ?? [],
+          };
+        })
+        // Live first, then upcoming soonest-first, then completed most-recent-first.
+        .sort((a, b) => {
+          const rank = (f: FixtureSummary) => (f.live ? 0 : !f.completed ? 1 : 2);
+          if (rank(a) !== rank(b)) return rank(a) - rank(b);
+          return rank(a) === 2 ? b.kickoff.localeCompare(a.kickoff) : a.kickoff.localeCompare(b.kickoff);
+        });
 
-      return { fixtures: summaries, error: null };
+      return { fixtures, error: null };
     }),
 });

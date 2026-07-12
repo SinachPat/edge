@@ -30,6 +30,21 @@ export interface OddsApiEvent {
   readonly bookmakers: OddsApiBookmaker[];
 }
 
+// Shared shape of /events (no scores fields) and /scores (verified live
+// 2026-07-12 against baseball_mlb): scores is null until a game starts, then
+// an array of {name: team name, score: string}; completed flips at final.
+export interface OddsApiScoreEvent {
+  readonly id: string;
+  readonly sport_key: string;
+  readonly sport_title: string;
+  readonly commence_time: string;
+  readonly home_team: string;
+  readonly away_team: string;
+  readonly completed?: boolean;
+  readonly scores?: ReadonlyArray<{ readonly name: string; readonly score: string }> | null;
+  readonly last_update?: string | null;
+}
+
 // ============================================================================
 // API-Football — https://api-sports.io
 // ============================================================================

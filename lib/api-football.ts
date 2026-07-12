@@ -66,7 +66,11 @@ export async function getFixtures(params: {
 }
 
 export async function getH2H(teamA: number, teamB: number, last = 10): Promise<ApiFootballFixture[]> {
-  return fetchFootball<ApiFootballFixture>('/fixtures/headtohead', { h2h: `${teamA}-${teamB}`, last });
+  // The `last` query param is blocked on Free plans (verified live:
+  // "Free plans do not have access to the Last parameter") — fetch the full
+  // head-to-head list and take the most recent meetings client-side instead.
+  const all = await fetchFootball<ApiFootballFixture>('/fixtures/headtohead', { h2h: `${teamA}-${teamB}` });
+  return all.sort((a, b) => b.fixture.date.localeCompare(a.fixture.date)).slice(0, last);
 }
 
 export async function getInjuries(fixtureId: number): Promise<unknown[]> {

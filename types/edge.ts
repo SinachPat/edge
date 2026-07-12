@@ -28,6 +28,8 @@ export interface Pick {
   home_team: string;
   away_team: string;
   fixture_id: string | null;
+  odds_event_id: string | null;
+  odds_sport_key: string | null;
   match_date: string;
   market_type: string;
   selection: string;
@@ -94,6 +96,9 @@ export interface SignalLog {
 
 // The enriched fixture object fed into Stage 1.
 export interface RawFixtureData {
+  // e.g. 'soccer' | 'basketball' | 'baseball' | 'american-football' — tells
+  // Stage 1 which market vocabulary and signal definitions apply.
+  readonly sport: string;
   readonly fixture: unknown;
   readonly h2h: unknown;
   readonly injuries: unknown;
@@ -105,6 +110,10 @@ export interface RawFixtureData {
   // props) — only fetched when the bulk-odds match succeeded, since it needs
   // that event's Odds API id. null when no match or no extended data exists.
   readonly extendedOdds: unknown;
+  // The Odds API event reference — settlement for non-soccer sports resolves
+  // final scores through /scores using these, so Stage 1 must echo them.
+  readonly oddsEventId: string | null;
+  readonly oddsSportKey: string | null;
 }
 
 // Stage 1 output per pick candidate.
@@ -118,6 +127,10 @@ export interface SignalScore {
   readonly marketType: string;
   readonly selection: string;
   readonly odds: number;
+  // Echoed verbatim from RawFixtureData — null when the fixture had no
+  // bulk-odds match (such candidates shouldn't exist, since odds are required).
+  readonly oddsEventId?: string | null;
+  readonly oddsSportKey?: string | null;
   readonly signalCount: number;
   readonly signalResults: Record<
     'layer1' | 'layer2' | 'layer3' | 'layer4' | 'layer5' | 'layer6' | 'layer7',

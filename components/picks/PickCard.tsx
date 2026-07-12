@@ -53,6 +53,11 @@ export function PickCard({
             )}
           </p>
           <p className="truncate text-sm text-gray-400">
+            {pick.sport && pick.sport.toLowerCase() !== 'soccer' && (
+              <span className="mr-1.5 rounded bg-[#1A3C5E]/60 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-300">
+                {pick.sport}
+              </span>
+            )}
             {pick.market_type} — {pick.selection}
           </p>
         </div>

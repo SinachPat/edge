@@ -1,5 +1,5 @@
 import { env } from './env';
-import type { OddsApiEvent } from '@/types/api';
+import type { OddsApiEvent, OddsApiScoreEvent } from '@/types/api';
 
 const BASE_URL = 'https://api.the-odds-api.com/v4';
 // Only h2h/spreads/totals are valid on the bulk /odds endpoint. Additional
@@ -105,6 +105,30 @@ export async function getEventOdds(sportKey: string, eventId: string): Promise<O
   return data ?? null;
 }
 
+// Live-verified costs (x-requests-last header, 2026-07-12): /events is FREE
+// (0 credits); /scores is 1 credit for live+upcoming only, 2 credits when
+// daysFrom is set (which is what includes completed games' final scores).
+
+// Event list without odds — {id, sport_key, sport_title, commence_time,
+// home_team, away_team}. Free, so safe to call per page view.
+export async function getEvents(sportKey: string): Promise<OddsApiScoreEvent[]> {
+  const data = await oddsApiFetch(`/sports/${sportKey}/events`, {}, { next: { revalidate: 900 } });
+  return data ?? [];
+}
+
+// Scores for live, upcoming, and (within daysFrom, max 3) completed games.
+// `scores` is null until a game starts; `completed` flips true at final.
+// 30-minute cache bounds the cost at 2 credits per sport per half hour no
+// matter how often the UI refetches.
+export async function getScores(sportKey: string, daysFrom = 2): Promise<OddsApiScoreEvent[]> {
+  const data = await oddsApiFetch(
+    `/sports/${sportKey}/scores/`,
+    { daysFrom: String(daysFrom) },
+    { next: { revalidate: 1800 } }
+  );
+  return data ?? [];
+}
+
 export async function getHistoricalOdds(sportKey: string, eventId: string): Promise<OddsApiEvent | null> {
   const data = await oddsApiFetch(`/sports/${sportKey}/odds-history/`, {
     regions: DEFAULT_REGIONS,
@@ -113,8 +137,20 @@ export async function getHistoricalOdds(sportKey: string, eventId: string): Prom
   return data ?? null;
 }
 
-export async function getSupportedSports(): Promise<{ key: string; title: string; active: boolean }[]> {
-  const data = await oddsApiFetch('/sports/', {});
+export interface OddsApiSport {
+  readonly key: string;
+  readonly group: string;
+  readonly title: string;
+  readonly description: string;
+  readonly active: boolean;
+  readonly has_outrights: boolean;
+}
+
+// The sports catalog is free but only changes when seasons start/end — cache
+// aggressively. `has_outrights: true` entries (futures like "FIFA World Cup
+// Winner") aren't match fixtures and should be filtered out by most callers.
+export async function getSupportedSports(): Promise<OddsApiSport[]> {
+  const data = await oddsApiFetch('/sports/', {}, { next: { revalidate: 3600 } });
   return data ?? [];
 }
 
