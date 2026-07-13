@@ -37,6 +37,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# free-source scheduled research log — informal, unverified, not part of the
+# production picks pipeline; keep it out of version control so it never gets
+# mistaken for real EDGE history
+# /free-source-log/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

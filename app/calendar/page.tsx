@@ -275,10 +275,19 @@ function FixtureRow({ fixture }: { fixture: FixtureSummary }) {
           <p
             className={clsx(
               'text-xs',
-              fixture.live ? 'font-semibold text-green-400' : fixture.completed ? 'text-gray-500' : 'text-gray-400'
+              fixture.live && 'font-semibold text-green-400',
+              fixture.statusUncertain && 'text-amber-400',
+              !fixture.live && !fixture.statusUncertain && (fixture.completed ? 'text-gray-500' : 'text-gray-400')
             )}
+            title={fixture.statusUncertain ? "Kicked off a while ago with no result yet — can't confirm it's still live" : undefined}
           >
-            {fixture.live ? '● Live' : fixture.completed ? 'Final' : 'Upcoming'}
+            {fixture.live
+              ? '● Live'
+              : fixture.statusUncertain
+                ? 'Status unknown'
+                : fixture.completed
+                  ? 'Final'
+                  : 'Upcoming'}
           </p>
         </div>
       </div>

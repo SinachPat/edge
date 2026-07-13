@@ -35,13 +35,19 @@ export type PipelineSport = (typeof ALL_PIPELINE_SPORTS)[number];
 export const RUN_SESSION_EVENT = 'session/run.requested';
 
 export const dailyPipeline = inngest.createFunction(
-  { id: 'daily-prediction-pipeline', triggers: [{ cron: '0 6 * * *' }, { event: RUN_SESSION_EVENT }] },
+  // Throttled from daily to Mon/Thu (2026-07-13) — daily runs across all 4 sports
+  // were burning the monthly Odds API / API-Football / SharpAPI credit allotment
+  // before the billing cycle reset. "Run Session" on /dashboard still works any
+  // day for whatever credit is left. Bump this back up once budget allows.
+  { id: 'daily-prediction-pipeline', triggers: [{ cron: '0 6 * * 1,4' }, { event: RUN_SESSION_EVENT }] },
   async ({ event, step }) => {
     const date = todayISODate();
-    // Cron-triggered runs carry no custom data — default to every sport.
-    // Manually-triggered runs specify which sports to include.
+    // Cron-triggered runs carry no custom data — default to soccer only (the
+    // cheapest, highest-signal slice) to conserve credit. Manually trigger
+    // other sports via "Run Session" when you want to spend remaining budget
+    // on NBA/MLB/NFL. Manually-triggered runs specify which sports to include.
     const requestedSports: readonly PipelineSport[] =
-      event?.name === RUN_SESSION_EVENT && Array.isArray(event.data?.sports) ? event.data.sports : ALL_PIPELINE_SPORTS;
+      event?.name === RUN_SESSION_EVENT && Array.isArray(event.data?.sports) ? event.data.sports : ['soccer'];
 
     // Written first (upsert, not insert — sessions.date is UNIQUE, and a
     // manual run can start on a day the cron already touched) so the

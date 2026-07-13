@@ -28,8 +28,24 @@ export interface FixtureSummary {
   readonly awayScore: string | null;
   readonly completed: boolean;
   readonly live: boolean;
+  // True once a fixture has been "live" longer than any of the tracked
+  // sports normally runs, with the API never marking it completed — e.g. the
+  // API-side `completed` flag never updated (verified live: The Odds API
+  // stopped returning fresh scores entirely once this account's quota was
+  // exhausted, 401 OUT_OF_USAGE_CREDITS), or a stale client-side cache is
+  // being served. Rather than keep asserting "Live" indefinitely off a
+  // heuristic with no real "in progress" signal, this flips the UI to an
+  // honest "status unknown" state instead of a confident green dot.
+  readonly statusUncertain: boolean;
   readonly picks: FixturePickSummary[];
 }
+
+// Generous, sport-agnostic ceiling: soccer (~2h), basketball (~2.5h), MLB
+// (~3-4h, rare extra-inning outliers), NFL (~3.5h) all normally finish well
+// inside this window. Past it without `completed: true`, the "Live" claim is
+// no longer trustworthy — the data source itself, not typical game length,
+// is what's actually in question.
+const MAX_PLAUSIBLE_LIVE_HOURS = 5;
 
 function scoreFor(scores: ReadonlyArray<{ name: string; score: string }> | null | undefined, team: string): string | null {
   if (!scores) return null;
@@ -91,6 +107,9 @@ export const fixturesRouter = router({
         .map((ev) => {
           const completed = ev.completed ?? false;
           const matchKey = `${normalizeName(ev.home_team)}|${normalizeName(ev.away_team)}|${ev.commence_time.slice(0, 10)}`;
+          const hoursSinceKickoff = (now - new Date(ev.commence_time).getTime()) / 3600000;
+          const started = hoursSinceKickoff >= 0;
+          const withinPlausibleLiveWindow = hoursSinceKickoff < MAX_PLAUSIBLE_LIVE_HOURS;
           return {
             eventId: ev.id,
             kickoff: ev.commence_time,
@@ -99,15 +118,16 @@ export const fixturesRouter = router({
             homeScore: scoreFor(ev.scores, ev.home_team),
             awayScore: scoreFor(ev.scores, ev.away_team),
             completed,
-            live: !completed && new Date(ev.commence_time).getTime() <= now,
+            live: !completed && started && withinPlausibleLiveWindow,
+            statusUncertain: !completed && started && !withinPlausibleLiveWindow,
             picks: picksByMatch.get(matchKey) ?? [],
           };
         })
-        // Live first, then upcoming soonest-first, then completed most-recent-first.
+        // Live, then upcoming soonest-first, then status-unknown, then completed most-recent-first.
         .sort((a, b) => {
-          const rank = (f: FixtureSummary) => (f.live ? 0 : !f.completed ? 1 : 2);
+          const rank = (f: FixtureSummary) => (f.live ? 0 : f.statusUncertain ? 2 : !f.completed ? 1 : 3);
           if (rank(a) !== rank(b)) return rank(a) - rank(b);
-          return rank(a) === 2 ? b.kickoff.localeCompare(a.kickoff) : a.kickoff.localeCompare(b.kickoff);
+          return rank(a) >= 2 ? b.kickoff.localeCompare(a.kickoff) : a.kickoff.localeCompare(b.kickoff);
         });
 
       return { fixtures, error: null };

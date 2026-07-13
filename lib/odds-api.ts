@@ -75,7 +75,12 @@ async function oddsApiFetch(endpoint: string, params: Record<string, string>, in
 
   if (!res.ok) {
     if (res.status === 404) return null;
-    throw new OddsApiError(endpoint, `HTTP ${res.status} ${res.statusText}`);
+    // The Odds API returns a JSON body on errors — {message, error_code,
+    // details_url} — e.g. quota exhaustion (401, OUT_OF_USAGE_CREDITS,
+    // verified live) reads only as "HTTP 401 Unauthorized" without this,
+    // which isn't enough to diagnose without manually re-querying the API.
+    const bodyText = await res.text().catch(() => '');
+    throw new OddsApiError(endpoint, `HTTP ${res.status} ${res.statusText}${bodyText ? ` — ${bodyText}` : ''}`);
   }
 
   return res.json();
