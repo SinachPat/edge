@@ -53,3 +53,62 @@ The honesty discipline the pipeline was built on is fully intact. It still never
 Live from the next scheduled run (daily, 07:07). The 2026-07-14 output was left as originally produced; these changes apply going forward.
 
 ---
+
+---
+
+## 2026-07-16 — Full-menu resilience (fixing over-rejection)
+
+A run collapsed the board to 1X2/totals, hit a moneyline price conflict on an
+already-played NWSL fixture, and reported "0 picks / no tickets" — while a real
+**St. Louis City −1.5** handicap edge (+17% central, riding Sporting KC's 0-4-0
+away record) sat un-priced. That is the *over-rejection* failure mode: the opposite
+of padding, but equally a miss. A top-tier analyst prices the whole fixture, not
+just who wins.
+
+**Added `PICK-RESILIENCE.md`** (read every run, right after the README). Five rules:
+1. Every serious fixture gets the FULL menu every time — class A (1X2, double chance,
+   all totals, team totals, **handicaps**, BTTS off the corrected matrix) AND class B
+   (corners, cards+referee, props), priced before concluding "no pick."
+2. A problem kills only the market it touches — a moneyline price conflict, or "rusty
+   league", never condemns the whole fixture. Rust → shrink harder (k≈6), use season
+   rates, prefer relative-mismatch markets; don't skip.
+3. Any edge >~+10% triggers a sensitivity sweep + a re-check vs the market's implied
+   prob before it's trusted; flips-under-plausible-inputs → Moderate and size down.
+4. Verify the fixture is actually un-played (check the clock) before pricing it.
+5. Correlated same-fixture legs → take the single best as a standalone; one strong
+   single is a complete, correct output.
+
+Model tweak applied same day: MLS attack/defence taken off **season** per-game rates
+with **k=6** shrinkage (heavier, for the WC-break layoff) rather than a noisy 5-game
+window. Guardrails unchanged (no invented prices, edge vs own estimate only,
+Strong/Moderate tiers, writes only inside free-source-log/).
+
+---
+
+## 2026-07-16 (later) — v2.0 top-down rewrite: multi-sport engine
+
+The pipeline was soccer-only. Rewrote it top-down as a **sport-agnostic engine**
+(`ENGINE.md`, now read every run). Changes:
+
+- **Step 0 — scan the whole board, all sports** (soccer, MLB, NBA/WNBA, EuroLeague,
+  tennis, NHL, NFL/CFB, MMA/boxing, F1, cricket). Pick the highest-signal, best-covered
+  events by data quality, not by sport habit. Verify in-season status live each run.
+- **Per-sport model modules** (Step 2): soccer Poisson/Dixon-Coles (unchanged); MLB
+  (Pythagorean + log5 + starter/park/weather, run-line margin dist); basketball
+  (net-rating/pace margin → win prob via margin SD); tennis (surface Elo / serve-hold);
+  NHL (low-score Poisson + goalie); NFL (efficiency margin via SD). Each shows inputs +
+  math + honest limits.
+- **Convergence Method** for no-model sports (MMA/F1/niche) — a NOVEL but disciplined
+  procedure: anchor on de-vigged multi-book consensus, score independent evidence lines
+  (−2…+2 each), apply a *bounded* adjustment (±8% cap, k=0.03/pt), and **fire only on
+  convergence** (≥3 independent lines agree). Labeled "Convergence estimate," never a
+  model or EV-vs-Pinnacle number; tier caps at Moderate. Structurally cannot manufacture
+  a large fake edge — anchored + bounded + agreement-gated.
+- **Cross-sport mixed tickets allowed** (Step 5), with an explicit hidden-correlation
+  check before combining legs.
+
+Guardrails fully preserved: no invented pick/price/signal; edge vs own estimate only;
+Strong/Moderate tiers; verbatim opening disclaimer; writes confined to free-source-log/.
+NOTE: the live scheduled SKILL.md (installed, read-only this session) still says
+"soccer-analysis"; to make v2.0 the permanent 07:07 task, paste the ENGINE.md scope into
+Settings > Capabilities. Until then, runs in-session follow ENGINE.md via the README.

@@ -1,5 +1,18 @@
 # Daily picks log — free-source pipeline
 
+> **Every run: read `ENGINE.md` (the authoritative multi-sport pipeline spec, v2.0)
+> AND `PICK-RESILIENCE.md` in this folder right after this README.** The engine is now
+> sport-agnostic — scan the whole board (soccer, MLB, NBA/WNBA, tennis, NHL, NFL, MMA,
+> F1, cricket…), model each with its per-sport module, use the Convergence Method for
+> no-model sports, and cross-sport mixed tickets are allowed. Added 2026-07-16.
+>
+> **Every run: read `PICK-RESILIENCE.md` in this folder right after this README.**
+> It enforces the full-market-menu discipline (price handicaps, team totals, double
+> chance, corners, cards, props — not just 1X2/BTTS/O2.5), stops one problem (a price
+> conflict, "the league is rusty", a missing prop price) from wiping the whole board,
+> and requires a sensitivity check on any large edge. Added 2026-07-16 after a run
+> collapsed to 1X2 and reported "nothing" when a real handicap edge existed.
+
 Output of `edge-daily-picks`, a Claude-run daily research pipeline that substitutes
 free public sources (ESPN, BBC Sport, Sofascore, FBref, plus whatever else a given
 day's fixtures need) for the paid Odds API / API-Football / SharpAPI stack. This is
